@@ -1,0 +1,42 @@
+import {type InstallFunction, loadServerInstall, getBrowserInstallFunction, getDefaultLinkerConfig, compile} from "jopijs/linker";
+import {ModuleInitContext} from "jopijs/ui";
+import * as jk_events from "jopi-toolkit/jk_events";
+import {JopiEasyWebSite, type WebSite} from "jopijs";
+import {logServer_linker} from "./_logs.ts";
+import {DontCallBeforeElapsed} from "jopi-toolkit/jk_tools";
+
+let gBrowserInstallFunction: InstallFunction<ModuleInitContext>;
+let gIsInit = false;
+
+export async function initLinker(webSite: JopiEasyWebSite, onWebSiteCreate: (h: (webSite: WebSite) => void|Promise<void>) => void) {
+    if (gIsInit) return;
+    gIsInit = true;
+
+    const endLog = logServer_linker.beginInfo("Rebuild linker on start");
+    await compile(import.meta, getDefaultLinkerConfig());
+    endLog();
+
+    gBrowserInstallFunction = await getBrowserInstallFunction();
+
+    await loadServerInstall(webSite, onWebSiteCreate);
+}
+
+export function executeBrowserInstall(ctx: ModuleInitContext) {
+    if (!gIsInit) return;
+    gBrowserInstallFunction(ctx);
+}
+
+const gLimitCompileCalls = new DontCallBeforeElapsed(2000);
+
+// Will allows updating shared components and composites.
+jk_events.addListener("@jopi.bundler.watch.beforeRebuild", async () => {
+    /**
+     * This event can occur multiple times with the single-page mode.
+     * It's why we limit the number of calls.
+     */
+    if (!gLimitCompileCalls.check()) return;
+
+    const endLog = logServer_linker.beginInfo("Rebuild linker on change");
+    await compile(import.meta, getDefaultLinkerConfig(), true /* is refreshing */);
+    endLog();
+});

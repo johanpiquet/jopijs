@@ -1,0 +1,1 @@
+The core of jopijs. Here it's mainly the server-side parts.

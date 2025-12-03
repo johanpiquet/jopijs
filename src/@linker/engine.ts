@@ -1,0 +1,865 @@
+import * as jk_fs from "jopi-toolkit/jk_fs";
+import * as jk_tools from "jopi-toolkit/jk_tools";
+import * as jk_term from "jopi-toolkit/jk_term";
+import * as jk_what from "jopi-toolkit/jk_what";
+import * as jk_events from "jopi-toolkit/jk_events";
+import {PriorityLevel} from "jopi-toolkit/jk_tools";
+
+export {PriorityLevel} from "jopi-toolkit/jk_tools";
+
+const LOG = false;
+
+//region Helpers
+
+export async function resolveFile(dirToSearch: string, fileNames: string[]): Promise<string|undefined> {
+    for (let fileName of fileNames) {
+        let filePath = jk_fs.join(dirToSearch, fileName);
+        if (await jk_fs.isFile(filePath)) return filePath;
+    }
+
+    return undefined;
+}
+
+export function declareLinkerError(message: string, filePath?: string): Error {
+    jk_term.logBgRed("⚠️ Jopi Linker Error -", message, "⚠️");
+    if (filePath) jk_term.logBlue("See:", jk_fs.pathToFileURL(filePath));
+    process.exit(1);
+}
+
+export async function getSortedDirItem(dirPath: string): Promise<jk_fs.DirItem[]> {
+    const items = await jk_fs.listDir(dirPath);
+    return items.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function useCanonicalFileName(fileFullPath: string, expectedFileName: string): Promise<string> {
+    let fileName = jk_fs.basename(fileFullPath);
+    let newFullPath = jk_fs.join(jk_fs.dirname(fileFullPath), expectedFileName);
+
+    if (fileName !== expectedFileName) {
+        await jk_fs.rename(fileFullPath, newFullPath);
+    }
+
+    return newFullPath;
+}
+
+export async function addNameIntoFile(filePath: string, name: string = jk_fs.basename(filePath)) {
+    await writeTextToFileIfMismatch(filePath, name);
+}
+
+/**
+ * Write the file content only if the file is missing or his content is not the same.
+ * Allows to avoid triggering a file change detection event.
+ */
+export async function writeTextToFileIfMismatch(filePath: string, content: string) {
+    if (!await jk_fs.isFile(filePath)) {
+        await jk_fs.writeTextToFile(filePath, content);
+        return;
+    }
+
+    const currentContent = await jk_fs.readTextFromFile(filePath);
+    if (currentContent===content) return;
+
+    //console.log("writeTextToFileIfMismatch - Updating file " + filePath);
+    await jk_fs.writeTextToFile(filePath, content);
+}
+
+//endregion
+
+//region Registry
+
+export interface RegistryItem {
+    itemPath: string;
+    arobaseType: ArobaseType;
+    priority?: PriorityLevel;
+}
+
+let gRegistry: Record<string, RegistryItem> = {};
+
+//endregion
+
+//region Generating code
+
+export enum FilePart {
+    imports = "imports",
+    body = "body",
+    footer = "footer",
+}
+
+export enum InstallFileType {server, browser, both}
+
+async function generateAll() {
+    function applyTemplate(template: string, header: string, body: string, footer: string): string {
+        if (!header) header = "";
+        if (!footer) footer = "";
+        if (!body) body = "";
+
+        template = template.replace("__AI_INSTRUCTIONS", AI_INSTRUCTIONS);
+        template = template.replace("__HEADER", header);
+        template = template.replace("__BODY", body);
+        template = template.replace("__FOOTER", footer);
+
+        return template;
+    }
+
+    for (let arobaseType of Object.values(gArobaseHandler)) {
+        await arobaseType.beginGeneratingCode(gCodeGenWriter);
+
+        let items: RegistryItem[] = [];
+
+        for (let key in gRegistry) {
+            const item = gRegistry[key];
+
+            if (item.arobaseType === arobaseType) {
+                const eventData = {
+                    codeWrite: gCodeGenWriter, key,
+                    item, items, mustSkip: false
+                };
+
+                items.push(item);
+                await jk_events.sendAsyncEvent("@jopi.linker.generateCode." + arobaseType.typeName, eventData);
+
+                if (!eventData.mustSkip) {
+                    await item.arobaseType.generateCodeForItem(gCodeGenWriter, key, item);
+                }
+            }
+        }
+
+        await arobaseType.endGeneratingCode(gCodeGenWriter, items);
+    }
+
+    for (let p of gModuleDirProcessors) {
+        await p.generateCode(gCodeGenWriter);
+    }
+
+    let installerFile = applyTemplate(gServerInstallFileTemplate, gServerInstallFile[FilePart.imports], gServerInstallFile[FilePart.body], gServerInstallFile[FilePart.footer]);
+    await writeTextToFileIfMismatch(getServerInstallScript(), installerFile);
+    gServerInstallFile = {};
+
+    installerFile = applyTemplate(gBrowserInstallFileTemplate, gBrowserInstallFile[FilePart.imports], gBrowserInstallFile[FilePart.body], gBrowserInstallFile[FilePart.footer]);
+    await writeTextToFileIfMismatch(getBrowserInstallScript(), installerFile);
+    gBrowserInstallFile = {};
+}
+
+interface WriteCodeFileParams {
+    fileInnerPath: string;
+    srcFileContent: string;
+    distFileContent: string;
+    declarationFile?: string;
+    useTypescriptForSource?: boolean;
+}
+
+export class CodeGenWriter {
+    public readonly isTypeScriptOnly = gIsTypeScriptOnly;
+
+    constructor(public readonly dir: Directories) {
+    }
+
+    toJavascriptFileName(filePath: string): string {
+        let idx = filePath.lastIndexOf(".");
+        if (idx!==-1) return filePath.substring(0, idx) + ".js";
+        return filePath;
+    }
+
+    makePathRelativeToOutput(path: string) {
+        return jk_fs.getRelativePath(this.dir.output_src, path);
+    }
+
+    async writeCodeFile(params: WriteCodeFileParams) {
+        // The file must:
+        // - Be a JavaScript file.
+        // - Be written into ./src/_jopiLinkerGen  (for alias resolve)
+        // - Be written into ./dst/_jopiLinkerGen  (for node.js TypeScript to js compilation)
+
+        const ext = params.useTypescriptForSource ? ".ts" : ".js";
+
+        await writeTextToFileIfMismatch(jk_fs.join(gDir_outputSrc, params.fileInnerPath + ext), params.srcFileContent);
+
+        if (!gIsTypeScriptOnly) {
+            await writeTextToFileIfMismatch(jk_fs.join(gDir_outputDst, params.fileInnerPath + ".js"), params.distFileContent);
+        }
+
+        if (params.declarationFile) {
+            if (!params.useTypescriptForSource) {
+                await writeTextToFileIfMismatch(jk_fs.join(gDir_outputSrc, params.fileInnerPath + ".d.ts"), params.declarationFile);
+            }
+
+            if (!gIsTypeScriptOnly) {
+                await writeTextToFileIfMismatch(jk_fs.join(gDir_outputDst, params.fileInnerPath + ".d.ts"), params.declarationFile);
+            }
+        }
+    }
+
+    genAddToInstallFile(who: InstallFileType, where: FilePart, javascriptContent: string) {
+        function addTo(group: Record<string, string>) {
+            let part = group[where] || "";
+            group[where] = part + javascriptContent;
+        }
+
+        if (who===InstallFileType.both) {
+            addTo(gServerInstallFile);
+            addTo(gBrowserInstallFile);
+        } else if (who===InstallFileType.server) {
+            addTo(gServerInstallFile);
+        } else if (who===InstallFileType.browser) {
+            addTo(gBrowserInstallFile);
+        }
+    }
+
+    public readonly AI_INSTRUCTIONS = AI_INSTRUCTIONS;
+}
+
+let gCodeGenWriter: CodeGenWriter;
+
+let gServerInstallFile: Record<string, string> = {};
+
+// Here it's ASYNC.
+let gServerInstallFileTemplate = `__AI_INSTRUCTIONS
+__HEADER
+
+export default async function(registry) {
+__BODY__FOOTER
+}`;
+
+let gBrowserInstallFile: Record<string, string> = {};
+
+// Here it's not async.
+let gBrowserInstallFileTemplate = `__AI_INSTRUCTIONS
+__HEADER
+
+export default function(registry) {
+__BODY__FOOTER
+}`;
+
+//endregion
+
+//region Processing project
+
+async function processProject() {
+    await processModules();
+    await generateAll();
+}
+
+async function processModules() {
+    let modules = await jk_fs.listDir(gDir_ProjectSrc);
+
+    for (let module of modules) {
+        if (!module.isDirectory) continue;
+        if (!module.name.startsWith("mod_")) continue;
+
+        for (let p of gModuleDirProcessors) {
+            await p.onBeginModuleProcessing(gCodeGenWriter, module.fullPath);
+            await jk_events.sendAsyncEvent("@jopi.linker.onModule", { codeWrite: gCodeGenWriter, moduleDir: module.fullPath});
+        }
+
+        await processModule(module.fullPath);
+
+        for (let p of gModuleDirProcessors) {
+            await p.onEndModuleProcessing(gCodeGenWriter, module.fullPath);
+        }
+    }
+}
+
+async function processModule(moduleDir: string) {
+    let dirItems = await jk_fs.listDir(moduleDir);
+    let arobaseDir: jk_fs.DirItem|undefined;
+
+    for (let dirItem of dirItems) {
+        if (!dirItem.isDirectory) continue;
+        if (dirItem.name[0] !== "@") continue;
+        if (dirItem.name == "@alias") { arobaseDir = dirItem; continue; }
+
+        let name = dirItem.name.substring(1);
+        let arobaseType = gArobaseHandler[name];
+        if (!arobaseType) throw declareLinkerError("Unknown arobase type: " + name, dirItem.fullPath);
+
+        if (arobaseType.position !== "root") continue;
+        await arobaseType.processDir({moduleDir, arobaseDir: dirItem.fullPath, genDir: gDir_outputSrc});
+    }
+
+    if (arobaseDir) {
+        dirItems = await jk_fs.listDir(arobaseDir.fullPath);
+
+        for (let dirItem of dirItems) {
+            if (!dirItem.isDirectory) continue;
+
+            let name = dirItem.name;
+            let arobaseType = gArobaseHandler[name];
+            if (!arobaseType) throw declareLinkerError("Unknown arobase type: " + name, dirItem.fullPath);
+
+            if (arobaseType.position === "root") continue;
+            await arobaseType.processDir({moduleDir, arobaseDir: dirItem.fullPath, genDir: gDir_outputSrc});
+        }
+    }
+}
+
+//endregion
+
+//region Extensions
+
+export abstract class ArobaseType {
+    constructor(public readonly typeName: string, public readonly position?: "root"|undefined) {
+        this.initialize();
+    }
+
+    protected initialize() {
+    }
+
+    abstract processDir(p: { moduleDir: string; arobaseDir: string; genDir: string; }): Promise<void>;
+
+    declareError(message: string, filePath?: string): Error {
+        return declareLinkerError(message, filePath);
+    }
+
+    //region Codegen
+
+    generateCodeForItem(writer: CodeGenWriter, key: string, rItem: RegistryItem): Promise<void> {
+        return Promise.resolve();
+    }
+
+    beginGeneratingCode(writer: CodeGenWriter): Promise<void> {
+        return Promise.resolve();
+    }
+
+    endGeneratingCode(writer: CodeGenWriter, items: RegistryItem[]): Promise<void> {
+        return Promise.resolve();
+    }
+
+    //endregion
+
+    //region Processing dir
+
+    /**
+     * Process a directory containing item to process.
+     *
+     * ruleDir/itemType/newItem1
+     *                 /newItem2
+     *                    ^- we will iterate it
+     *           ^-- we are here
+     */
+    async dir_recurseOnDir(p: ScanDirItemsParams) {
+        const dirItems = await jk_fs.listDir(p.dirToScan);
+
+        for (let entry of dirItems) {
+            if ((entry.name[0] === ".") || (entry.name[0] === "_")) continue;
+
+            if (p.expectFsType === "file") {
+                if (entry.isFile) {
+                    if (p.handler) await p.handler(entry, p.rules);
+                    else if (p.rules) await this.dir_processItem(entry, p.rules);
+                }
+            } else if (p.expectFsType === "dir") {
+                if (entry.isDirectory) {
+                    if (p.handler) await p.handler(entry, p.rules);
+                    else if (p.rules) await this.dir_processItem(entry, p.rules);
+                }
+            } else if (p.expectFsType === "fileOrDir") {
+                if (p.handler) await p.handler(entry, p.rules);
+                else if (p.rules) await this.dir_processItem(entry, p.rules);
+            }
+        }
+    }
+
+    /**
+     * Process an item to process.
+     * Will analyze it and extract common informations.
+     *
+     * ruleDir/itemType/newItem/...
+     *                  ^-- we are here
+     */
+    async dir_processItem(dirItem: jk_fs.DirItem, p: ProcessDirItemParams) {
+        const thisIsFile = dirItem.isFile;
+        const thisFullPath = dirItem.fullPath;
+        const thisName = dirItem.name;
+        let thisNameAsUID: string|undefined;
+
+        // The file / folder-name is a UUID4?
+        let thisIsUUID = jk_tools.isUUIDv4(thisName);
+
+        if (thisIsUUID) {
+            if (p.nameConstraint==="mustNotBeUid") {
+                throw declareLinkerError("The name must NOT be an UID", thisFullPath);
+            }
+
+            thisNameAsUID = thisName;
+        } else {
+            if (p.nameConstraint==="mustBeUid") {
+                throw declareLinkerError("The name MUST be an UID", thisFullPath);
+            }
+        }
+
+        // It's a file?
+        if (thisIsFile) {
+            // Process it now.
+            await p.transform({
+                itemName: thisName,
+                uid: thisIsUUID ? thisName : undefined,
+                priority: PriorityLevel.default,
+
+                itemPath: thisFullPath, isFile: thisIsFile,
+                parentDirName: p.rootDirName,
+
+                resolved: {}
+            });
+
+            return;
+        }
+
+        // Will search references to config.json / index.tsx / ...
+        //
+        let resolved: Record<string, string | undefined> = {};
+        //
+        if (p.filesToResolve) {
+            for (let key in p.filesToResolve) {
+                resolved[key] = await resolveFile(thisFullPath, p.filesToResolve[key]);
+            }
+        }
+
+        // Search the "uid.myuid" file, which allows knowing the uid of the item.
+        //
+        const result = await this.dir_extractInfos(thisFullPath, p);
+
+        const myUid = result.myUid;
+        const refTarget = result.refTarget;
+        const conditions = result.conditionsFound;
+        let priority = result.priority!;
+
+        if (!priority) {
+            priority = PriorityLevel.default;
+
+            if (p.requirePriority) {
+                await addNameIntoFile(jk_fs.join(thisFullPath, "default.priority"), "default.priority");
+            }
+        }
+
+        if (myUid) {
+            // If itemUid already defined, then must match myUidFile.
+            if (thisNameAsUID && (thisNameAsUID!==myUid)) {
+                throw declareLinkerError("The UID in the .myuid file is NOT the same as the UID in the folder name", thisFullPath);
+            }
+
+            thisNameAsUID = myUid;
+        }
+
+        await p.transform({
+            itemName: thisName, uid: thisNameAsUID, refTarget,
+            itemPath: thisFullPath, isFile: thisIsFile, resolved, priority,
+            parentDirName: p.rootDirName,
+            conditions
+        });
+    }
+
+    /**
+     * Analyse the content of a dir, extract information and check rules.
+     * @param dirPath
+     * @param rules
+     * @param useThisUid
+     */
+    protected async dir_extractInfos(dirPath: string, rules: DirAnalyzingRules, useThisUid?: string | undefined): Promise<ExtractDirectoryInfosResult> {
+        const decodeFeature = async (dirItem: jk_fs.DirItem, ext: string): Promise<string> => {
+            let featureName = dirItem.name.toLowerCase();
+            featureName = featureName.slice(0, -ext.length);
+
+            let canonicalName = this.normalizeFeatureName(featureName, rules.featureCheckingContext);
+
+            if (!canonicalName) {
+                throw declareLinkerError("Unknown feature name: " + featureName, dirItem.fullPath);
+            }
+
+            dirItem.name = canonicalName + ext;
+            dirItem.fullPath = await useCanonicalFileName(dirItem.fullPath, dirItem.name);
+
+            return canonicalName;
+        }
+
+        const decodeCond = async (dirItem: jk_fs.DirItem): Promise<string> => {
+            let condName = dirItem.name.toLowerCase();
+            // Remove .cond
+            condName = condName.slice(0, -5);
+
+            let canonicalName = this.normalizeConditionName(condName, rules.conditionCheckingContext);
+
+            if (!canonicalName) {
+                throw declareLinkerError("Unknown condition name: " + condName, dirItem.fullPath);
+            }
+
+            dirItem.name = canonicalName + ".cond";
+            dirItem.fullPath = await useCanonicalFileName(dirItem.fullPath, dirItem.name);
+
+            return canonicalName;
+        }
+
+        async function decodePriority(priorityName: string, itemFullPath: string): Promise<PriorityLevel> {
+            priorityName = priorityName.toLowerCase();
+            priorityName = priorityName.replace("-", "");
+            priorityName = priorityName.replace("_", "");
+
+            switch (priorityName) {
+                case "default.priority":
+                    await useCanonicalFileName(itemFullPath, priorityName)
+                    return PriorityLevel.default;
+                case "veryhigh.priority":
+                    await useCanonicalFileName(itemFullPath, "very_high.priority")
+                    return PriorityLevel.veryHigh;
+                case "high.priority":
+                    await useCanonicalFileName(itemFullPath, priorityName)
+                    return PriorityLevel.high;
+                case "low.priority":
+                    await useCanonicalFileName(itemFullPath, priorityName)
+                    return PriorityLevel.low;
+                case "verylow.priority":
+                    await useCanonicalFileName(itemFullPath, "very_low.priority")
+                    return PriorityLevel.veryLow;
+            }
+
+            throw declareLinkerError("Unknown priority name: " + jk_fs.basename(itemFullPath, ".priority"), itemFullPath);
+        }
+
+        async function checkDirItem(entry: jk_fs.DirItem) {
+            if (entry.isSymbolicLink) return false;
+            if (entry.name[0] === ".") return false;
+
+            if (entry.isDirectory) {
+                if (entry.name==="_") {
+                    let uid = useThisUid || jk_tools.generateUUIDv4();
+                    let newPath = jk_fs.join(jk_fs.dirname(entry.fullPath), uid);
+                    await jk_fs.rename(entry.fullPath, newPath);
+
+                    entry.name = uid;
+                    entry.fullPath = newPath;
+                }
+
+                if (entry.name[0]== "_") return false;
+            }
+            else {
+                if (entry.name === "_.myuid") {
+                    let uid = useThisUid || jk_tools.generateUUIDv4();
+                    await jk_fs.unlink(entry.fullPath);
+                    entry.fullPath = jk_fs.join(jk_fs.dirname(entry.fullPath), uid + ".myuid");
+                    entry.name = uid + ".myuid";
+
+                    await writeTextToFileIfMismatch(entry.fullPath, uid);
+                }
+
+                if (entry.name[0]== "_") return false;
+
+                if (entry.name.endsWith(".myuid")) {
+                    if (result.myUid) {
+                        throw declareLinkerError("More than one .myuid file found here", entry.fullPath);
+                    }
+
+                    result.myUid = entry.name.slice(0, -6);
+                    await addNameIntoFile(entry.fullPath);
+                }
+                else if (entry.name.endsWith(".priority")) {
+                    if (result.priority) {
+                        throw declareLinkerError("More than one .priority file found here", entry.fullPath);
+                    }
+
+                    if (rules.requirePriority===false) {
+                        throw declareLinkerError("A .priority file is NOT expected here", entry.fullPath);
+                    }
+
+                    await addNameIntoFile(entry.fullPath);
+                    result.priority = await decodePriority(entry.name, entry.fullPath);
+                }
+                else if (entry.name.endsWith(".cond")) {
+                    if (rules.allowConditions===false) {
+                        throw declareLinkerError("A .cond file is NOT expected here", entry.fullPath);
+                    }
+
+                    if (!result.conditionsFound) result.conditionsFound = new Set<string>();
+                    result.conditionsFound.add(await decodeCond(entry));
+
+                    await addNameIntoFile(entry.fullPath);
+                }
+                else if (entry.name.endsWith(".ref")) {
+                    if (result.refTarget) {
+                        throw declareLinkerError("More than one .ref file found here", entry.fullPath);
+                    }
+
+                    if (rules.requireRefFile === false) {
+                        throw declareLinkerError("A .ref file is NOT expected here", entry.fullPath);
+                    }
+
+                    result.refTarget = entry.name.slice(0, -4);
+
+                    await addNameIntoFile(entry.fullPath);
+                }
+                else if (entry.name.endsWith(".disable")) {
+                    if (rules.allowFeatures===false) {
+                        throw declareLinkerError("A .disable file is NOT expected here", entry.fullPath);
+                    }
+
+                    if (!result.features) result.features = {};
+
+                    let canonicalName = await decodeFeature(entry, ".disable");
+                    result.features[canonicalName] = false;
+
+                    entry.name = canonicalName + ".disable";
+                    entry.fullPath = await useCanonicalFileName(entry.fullPath, entry.name);
+                    await addNameIntoFile(entry.fullPath);
+                }
+                else if (entry.name.endsWith(".enable")) {
+                    if (rules.allowFeatures===false) {
+                        throw declareLinkerError("A .disable file is NOT expected here", entry.fullPath);
+                    }
+
+                    if (!result.features) result.features = {};
+
+                    let canonicalName = await decodeFeature(entry, ".enable");
+                    result.features[canonicalName] = true;
+
+                    entry.name = canonicalName + ".enable";
+                    entry.fullPath = await useCanonicalFileName(entry.fullPath, entry.name);
+                    await addNameIntoFile(entry.fullPath);
+                }
+
+                return true;
+            }
+        }
+
+        let result: ExtractDirectoryInfosResult = { dirItems: [] };
+
+        const items = await getSortedDirItem(dirPath);
+
+        for (let item of items) {
+            if (!await checkDirItem(item)) continue;
+            result.dirItems.push(item);
+        }
+
+        return result;
+    }
+
+    protected normalizeConditionName(condName: string, ctx: any|undefined): string|undefined {
+        return undefined;
+    }
+
+    protected normalizeFeatureName(featureName: string, ctx: any|undefined): string|undefined {
+        return undefined;
+    }
+
+    //endregion
+
+    //region Registry
+
+    registry_addItem<T extends RegistryItem>(itemId: string, item: T) {
+        // If already exists, then keep the one with greater priority.
+        //
+        if (gRegistry[itemId]) {
+            let currentPriority = gRegistry[itemId]?.priority || PriorityLevel.default;
+            let itemPriority = item.priority || PriorityLevel.default;
+            if (currentPriority > itemPriority) return;
+        }
+
+        gRegistry[itemId] = item;
+
+        if (LOG) {
+            const relPath = jk_fs.getRelativePath(gDir_ProjectSrc, item.itemPath);
+            console.log(`Add ${itemId} to registry. Path: ${relPath}`);
+        }
+    }
+
+    registry_getItem<T extends RegistryItem>(key: string, requireType?: ArobaseType): T|undefined {
+        const entry = gRegistry[key];
+        if (requireType && entry && (entry.arobaseType !== requireType)) throw declareLinkerError("The item " + key + " is not of the expected type @" + requireType.typeName);
+        return entry as T;
+    }
+
+    registry_requireItem<T extends RegistryItem>(key: string, requireType?: ArobaseType): T {
+        const entry = gRegistry[key];
+        if (!entry) throw declareLinkerError("The item " + key + " is required but not defined");
+        if (requireType && (entry.arobaseType !== requireType)) throw declareLinkerError("The item " + key + " is not of the expected type @" + requireType.typeName);
+        return entry as T;
+    }
+
+    //endregion
+}
+
+export interface DirAnalyzingRules {
+    requireRefFile?: boolean;
+    allowConditions?: boolean;
+    requirePriority?: boolean;
+    allowFeatures?: boolean;
+    conditionCheckingContext?: any;
+    featureCheckingContext?: any;
+}
+
+export interface ScanDirItemsParams {
+    dirToScan: string;
+    expectFsType: "file"|"dir"|"fileOrDir";
+
+    /**
+     * If defined, then will be called for each validated entry.
+     */
+    handler?: (item: jk_fs.DirItem, rules: ProcessDirItemParams|undefined) => Promise<void>;
+
+    rules?: ProcessDirItemParams;
+}
+
+export interface ProcessDirItemParams extends DirAnalyzingRules {
+    rootDirName: string;
+    filesToResolve?: Record<string, string[]>;
+    nameConstraint: "canBeUid"|"mustNotBeUid"|"mustBeUid";
+
+    transform: (props: TransformItemParams) => Promise<void>;
+}
+
+export interface TransformItemParams {
+    itemName: string;
+    itemPath: string;
+    isFile: boolean;
+
+    uid?: string;
+    refTarget?: string;
+    conditions?: Set<string>;
+
+    parentDirName: string;
+    priority: PriorityLevel;
+
+    resolved: Record<string, string|undefined>;
+}
+
+export interface ExtractDirectoryInfosResult {
+    dirItems: jk_fs.DirItem[];
+
+    myUid?: string;
+    priority?: PriorityLevel;
+    refTarget?: string;
+    conditionsFound?: Set<string>;
+    features?: Record<string, boolean>;
+}
+
+export class ModuleDirProcessor {
+    onBeginModuleProcessing(writer: CodeGenWriter, moduleDir: string): Promise<void> {
+        return Promise.resolve();
+    }
+
+    onEndModuleProcessing(writer: CodeGenWriter, moduleDir: string): Promise<void> {
+        return Promise.resolve();
+    }
+
+    generateCode(writer: CodeGenWriter): Promise<void> {
+        return Promise.resolve();
+    }
+}
+
+let gArobaseHandler: Record<string, ArobaseType> = {};
+let gModuleDirProcessors: ModuleDirProcessor[] = [];
+
+//endregion
+
+//region Bootstrap
+
+let gDir_ProjectRoot: string;
+let gDir_ProjectSrc: string;
+let gDir_ProjectDist: string;
+let gDir_outputSrc: string;
+let gDir_outputDst: string;
+
+export function getWriter(): CodeGenWriter {
+    return gCodeGenWriter;
+}
+
+export function getBrowserInstallScript() {
+    if (gIsTypeScriptOnly) return jk_fs.join(gDir_outputSrc, "installBrowser.js");
+    return jk_fs.join(gDir_outputDst, "installBrowser.js");
+}
+
+export function getServerInstallScript() {
+    if (gIsTypeScriptOnly) return jk_fs.join(gDir_outputSrc, "installServer.js");
+    return jk_fs.join(gDir_outputDst, "installServer.js");
+}
+
+export interface Directories {
+    project: string;
+    project_src: string;
+    project_dst: string;
+
+    output_dir: string;
+    output_src: string;
+    output_dist: string;
+}
+
+let gIsTypeScriptOnly: boolean;
+
+export async function compile(importMeta: any, config: LinkerConfig, isRefresh = false): Promise<void> {
+    async function searchLinkerScript(): Promise<string|undefined> {
+        let jopiLinkerScript = jk_fs.join(gDir_ProjectRoot, "dist", "jopi-linker.js");
+        if (await jk_fs.isFile(jopiLinkerScript)) return jopiLinkerScript;
+
+        if (jk_what.isBunJS) {
+            jopiLinkerScript = jk_fs.join(gDir_ProjectSrc, "jopi-linker.ts");
+            if (await jk_fs.isFile(jopiLinkerScript)) return jopiLinkerScript;
+        }
+
+        return undefined;
+    }
+
+    // Reset the registry in case of a second call to compile.
+    gRegistry = {};
+
+    gDir_ProjectRoot = config.projectRootDir;
+    gDir_ProjectSrc = jk_fs.join(gDir_ProjectRoot, "src");
+    gDir_ProjectDist = jk_fs.join(gDir_ProjectRoot, "dist");
+
+    gDir_outputSrc = jk_fs.join(gDir_ProjectSrc, "_jopiLinkerGen");
+    gDir_outputDst = jk_fs.join(gDir_ProjectDist, "_jopiLinkerGen");
+
+    gIsTypeScriptOnly = !importMeta.filename.endsWith(".js");
+
+    gCodeGenWriter = new CodeGenWriter({
+        project: gDir_ProjectRoot,
+        project_src: gDir_ProjectSrc,
+        project_dst: gDir_ProjectDist,
+
+        output_src: gDir_outputSrc,
+        output_dist: gDir_outputDst,
+
+        output_dir: gIsTypeScriptOnly ? gDir_outputSrc : gDir_outputDst
+    });
+
+    let jopiLinkerScript = await searchLinkerScript();
+    if (jopiLinkerScript) await import(jopiLinkerScript);
+
+    gServerInstallFileTemplate = config.templateForServer;
+    gBrowserInstallFileTemplate = config.templateForBrowser;
+
+    gArobaseHandler = {};
+
+    for (let aType of config.arobaseTypes) {
+        gArobaseHandler[aType.typeName] = aType;
+    }
+
+    gModuleDirProcessors = [];
+
+    for (let p of config.modulesProcess) {
+        gModuleDirProcessors.push(p);
+    }
+
+    // Avoid deleting the directory if it's a refresh.
+    // Why? Because resource can be requested while the
+    // refresh is occuring.
+    //
+    if (!isRefresh) {
+        // Note: here we don't destroy the dist dir.
+        await jk_fs.rmDir(gDir_outputSrc);
+    }
+
+    await processProject();
+}
+
+export interface LinkerConfig {
+    projectRootDir: string;
+    templateForBrowser: string;
+    templateForServer: string;
+    arobaseTypes: ArobaseType[];
+    modulesProcess: ModuleDirProcessor[];
+}
+
+//endregion
+
+export const AI_INSTRUCTIONS = `/*
+This file is generated by Jopi.js. Do not modify it.
+See file ARCHITECTURE.md at the root of the project for instructions.
+*/
+`;

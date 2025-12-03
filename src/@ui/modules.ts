@@ -1,0 +1,121 @@
+// noinspection JSUnusedGlobalSymbols
+
+import * as jk_events from "jopi-toolkit/jk_events";
+import {type UiUserInfos} from "./tools.ts";
+import React from "react";
+import {isServerSide} from "jopi-toolkit/jk_what";
+import {type IsObjectRegistry} from "./objectRegistry.ts";
+import {getDefaultPageController} from "./internal.ts";
+
+export interface ModuleInitContext_Host {
+    objectRegistry: IsObjectRegistry;
+
+    getCurrentURL(): URL;
+    getUserInfos(): UiUserInfos|undefined;
+    mustRemoveTrailingSlashes: boolean;
+
+    events: jk_events.EventGroup;
+}
+
+export interface ComponentAliasDef {
+    alias: string;
+    component: React.ComponentType<any>;
+}
+
+type UiInitializer = () => void;
+
+/**
+ * This class is what is sent as the default export function
+ * of your module `uiInit.tsx`. It allows configuring things
+ * allowing your plugin to initialize your UI.
+ * 
+ * * On the server side, it's executed for each page.
+ * * On the browser side, it's executed for each browser refresh.
+ */
+export class ModuleInitContext {
+    public readonly objectRegistry: IsObjectRegistry;
+    public readonly events: jk_events.EventGroup;
+    public readonly isBrowserSide: boolean = !isServerSide;
+    protected readonly host: ModuleInitContext_Host;
+
+    constructor(host?: ModuleInitContext_Host) {
+        if (!host) host = getDefaultPageController();
+        this.host = host;
+
+        this.objectRegistry = host.objectRegistry;
+        this.events = host.events;
+
+        this.initialize();
+    }
+
+    protected initialize() {
+        // Will be overridden.
+    }
+
+    protected finalize() {
+
+    }
+
+    getCurrentURL(): URL {
+        return this.host.getCurrentURL();
+    }
+
+    addUiInitializer(priority: UiInitializer|jk_events.EventPriority, initializer?: UiInitializer|undefined) {
+        this.events.addListener("app.init.ui", priority, initializer);
+    }
+
+    getUserInfos(): UiUserInfos|undefined {
+        return this.host.getUserInfos();
+    }
+
+    getUserRoles(): string[] {
+        let userInfos = this.getUserInfos();
+        if (!userInfos) return [];
+        return userInfos.roles || [];
+    }
+
+    userHasRoles(roles: string[]): boolean {
+        if (roles.length === 0) return true;
+
+        let userInfos = this.getUserInfos();
+        if (!userInfos) return false;
+
+        let userRoles = userInfos.roles;
+        if (!userRoles) return false;
+
+        return !!roles.every(role => userRoles.includes(role));
+    }
+
+    ifUserHasRoles(roles: string[], f: (userInfos: UiUserInfos) => void): void {
+        if (this.userHasRoles(roles)) {
+            f(this.getUserInfos()!);
+        }
+    }
+
+    ifUserLoggedIn(f: (userInfos: UiUserInfos) => void) {
+        let userInfos = this.getUserInfos();
+        if (!userInfos) return;
+        return f(userInfos);
+    }
+
+    ifNotUserLoggedIn(f: () => Promise<void>) {
+        if (!this.getUserInfos()) f();
+    }
+}
+
+export interface ExtraPageParams {
+    menuEntries: MenuItemForExtraPageParams[]
+}
+
+export interface MenuItemForExtraPageParams {
+    menuName: string,
+    keys: string[],
+    url: string,
+
+    title?: string,
+    icon?: string,
+    roles?: string[]
+
+    priority?: number
+}
+

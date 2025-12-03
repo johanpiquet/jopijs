@@ -1,0 +1,1285 @@
+// noinspection JSUnusedGlobalSymbols
+
+import path from "node:path";
+import fsc from "node:fs";
+import * as jk_app from "jopi-toolkit/jk_app";
+import * as jk_timer from "jopi-toolkit/jk_timer";
+import * as jk_term from "jopi-toolkit/jk_term";
+import * as jk_events from "jopi-toolkit/jk_events";
+
+import type {Config as TailwindConfig} from 'tailwindcss';
+import {type FetchOptions, type ServerDownResult, ServerFetch, type ServerFetchOptions} from "./serverFetch.ts";
+import {getLetsEncryptCertificate, type LetsEncryptParams, type OnTimeoutError} from "./letsEncrypt.ts";
+import {type UserInfos_WithLoginPassword, UserStore_WithLoginPassword} from "./userStores.ts";
+import {getBundlerConfig, type PostCssInitializer} from "./bundler/config.ts";
+import {serverInitChronos} from "./internalTools.ts";
+import {getInMemoryCache, initMemoryCache, type InMemoryCacheOptions} from "./caches/InMemoryCache.ts";
+import {SimpleFileCache} from "./caches/SimpleFileCache.ts";
+import {
+    type CrawlerCanIgnoreIfAlreadyCrawled,
+    ProcessUrlResult,
+    type UrlProcessedInfos,
+    WebSiteCrawler,
+    type WebSiteCrawlerOptions
+} from "jopijs/crawler";
+import {type FakeNoUserListener, JopiRequest} from "./jopiRequest.ts";
+import {
+    type UserAuthentificationFunction, type CacheRules, type HttpMethod, type JopiMiddleware, type JopiPostMiddleware,
+    type JopiRouteHandler, type MiddlewareOptions,
+    type UserInfos,
+    type WebSite,
+    WebSiteImpl,
+    WebSiteOptions
+} from "./jopiWebSite.tsx";
+import type {PageCache} from "./caches/cache.ts";
+import {getServer, type SseEvent} from "./jopiServer.ts";
+import {HTTP_VERBS} from "./publicTools.ts";
+import {getPackageJsonConfig} from "jopijs/loader-tools";
+import {initLinker} from "./linker.ts";
+import {logServer_startApp} from "./_logs.ts";
+
+serverInitChronos.start("jopiEasy lib");
+
+class JopiApp {
+    private _isStartAppSet: boolean = false;
+
+    startApp(importMeta: any, f: (jopiEasy: JopiEasy) => void|Promise<void>): void {
+        async function doStart() {
+            await jk_app.waitServerSideReady();
+            await jk_app.declareAppStarted();
+
+            let res = f(new JopiEasy());
+            if (res instanceof Promise) await res;
+        }
+
+        if (this._isStartAppSet) throw "App is already started";
+        this._isStartAppSet = true;
+
+        const logEnd = logServer_startApp.beginInfo("Starting Application");
+        jk_app.setApplicationMainFile(importMeta.filename);
+        doStart().then(logEnd);
+    }
+}
+
+let gWebSiteCreated = false;
+
+export class JopiEasy {
+    private getDefaultUrl(): string {
+        let config = getPackageJsonConfig();
+
+        if (config.webSiteListeningUrl) return config.webSiteListeningUrl;
+        if (config.webSiteUrl) return config.webSiteUrl;
+
+        throw new Error("Invalid package.json configuration. 'jopi.webSiteUrl' or 'jopi.webSiteListeningUrl' must be set");
+    }
+
+    create_webSiteServer(url?: string, ref?: RefFor_WebSite): JopiEasyWebSite {
+        if (gWebSiteCreated) throw new Error("WebSite already created");
+        gWebSiteCreated = true;
+
+        if (!url) {
+            url = this.getDefaultUrl();
+        }
+
+        const res = new JopiEasyWebSite_ExposePrivate(url);
+        if (ref) ref.webSite = res;
+        return res;
+    }
+
+    create_webSiteDownloader(urlOrigin?: string|undefined): CrawlerDownloader {
+        if (gWebSiteCreated) throw new Error("WebSite already created");
+        gWebSiteCreated = true;
+
+        if (!urlOrigin) {
+            urlOrigin = this.getDefaultUrl();
+        }
+        
+        return new CrawlerDownloader(urlOrigin);
+    }
+}
+
+export class RefFor_WebSite {
+    webSite?: JopiEasyWebSite;
+
+    waitWebSiteReady(): Promise<void> {
+        if (!this.webSite) return Promise.reject("website not set");
+
+        return new Promise<void>((resolve) => {
+            this.webSite?.on_webSiteReady(resolve);
+        });
+    }
+}
+
+export const jopiApp = new JopiApp();
+
+//region Crawler
+
+class CrawlerDownloader {
+    private readonly _options: WebSiteCrawlerOptions = {};
+    private _outputDir: string = "www-out";
+    private _startUrl?: string;
+    private readonly _urlPrefix: string;
+    private _ignoreIfAlreadyDownloaded?: boolean;
+    private _onUrlProcessed?: (infos: UrlProcessedInfos)=>void;
+    private _filter_canIgnoreIfAlreadyCrawled?: (url: string, infos: CrawlerCanIgnoreIfAlreadyCrawled) => boolean;
+
+
+    constructor(private readonly urlOrigin: string) {
+        const urlInfos = new URL(urlOrigin);
+        this._urlPrefix = urlInfos.origin;
+        this._outputDir = path.resolve(process.cwd(), "www_" + urlInfos.hostname);
+    }
+
+    /**
+     * Define the directory where files will be downloaded.
+     * If not set, that it takes the current url and the hostname.
+     */
+    set_outputDir(outputDir: string){
+        this._outputDir = outputDir;
+        return this;
+    }
+    
+    /**
+     * Define the start point url.
+     * If not set, the default is "/".
+     * @param url
+     */
+    set_startUrl(url: string) {
+        this._startUrl = this.normalizeUrl(url);
+        return this;
+    }
+
+    private normalizeUrl(url: string): string {
+        if (url.startsWith(this._urlPrefix)) {
+            return url.substring(this._urlPrefix.length);
+        }
+
+        return url;
+    }
+
+    /**
+     * Add url with must be crawled.
+     * Is required if these urls aren't reachable from the start point.
+     */
+    set_extraUrls(urlList: string[]) {
+        urlList = urlList.map(u => this.normalizeUrl(u));
+        this._options.scanThisUrls = [...new Set([...this._options.scanThisUrls||[], ...urlList])];
+        return this;
+    }
+
+    /**
+     * Allow avoiding downloading again a resource if already in cache.
+     * @param value
+     */
+    setOption_ignoreIfAlreadyDownloaded(value = true) {
+        this._ignoreIfAlreadyDownloaded = value;
+        return this;
+    }
+
+    /**
+     * Set a function which is called when a URL has been processed.
+     *
+     * @param listener - A function that received information about the URL and his processing state.
+     */
+    on_urlProcessed(listener: (infos: UrlProcessedInfos) => void) {
+        this._onUrlProcessed = listener;
+        return this;
+    }
+
+    /**
+     * Sets a filter function to determine whether a URL can be downloaded.
+     *
+     * @param filter - A function that takes the URL as a string and a boolean flag
+     *                 indicating if it is a resource, and returns a boolean indicating
+     *                 whether the URL can be downloaded.
+     *
+     *                 Returns true if the url can be processed.
+     */
+    setFilter_canProcessThisUrl(filter: (url: string, isResource: boolean)=>boolean) {
+        this._options.canDownload = filter;
+        return this;
+    }
+
+    setFilter_canIgnoreIfAlreadyDownloaded(filter: (url: string, infos: CrawlerCanIgnoreIfAlreadyCrawled)=>boolean) {
+        if (this._ignoreIfAlreadyDownloaded===undefined) {
+            this._ignoreIfAlreadyDownloaded = true;
+        }
+
+        this._filter_canIgnoreIfAlreadyCrawled = filter;
+        return this;
+    }
+
+    async START_DOWNLOAD(): Promise<void> {
+        const downloader = this;
+
+        const crawler = new WebSiteCrawler(this.urlOrigin, {
+            outputDir: this._outputDir,
+
+            onUrlProcessed(infos) {
+                switch (infos.state) {
+                    case ProcessUrlResult.IGNORED:
+                        console.log("👎  Website downloader, url IGNORED:", infos.sourceUrl);
+                        break;
+
+                    case ProcessUrlResult.ERROR:
+                        console.log("❌  Website downloader, url ERROR:", infos.sourceUrl);
+                        break;
+
+                    case ProcessUrlResult.OK:
+                        console.log("✅  Website downloader, url DOWNLOADED:", infos.sourceUrl);
+                        break;
+
+                    case ProcessUrlResult.REDIRECTED:
+                        console.log("🚫  Website downloader, url REDIRECTED:", infos.sourceUrl);
+                        break;
+                }
+
+                if (downloader._onUrlProcessed) {
+                    downloader._onUrlProcessed(infos);
+                }
+            },
+
+            canIgnoreIfAlreadyCrawled(url, infos) {
+                if (!downloader._ignoreIfAlreadyDownloaded) return false;
+
+                if (downloader._filter_canIgnoreIfAlreadyCrawled) {
+                    return downloader._filter_canIgnoreIfAlreadyCrawled(url, infos)
+                }
+
+                return true;
+            },
+
+            ... this._options
+        });
+
+        console.log("Downloading website", this.urlOrigin)
+        await crawler.start(this._startUrl);
+        console.log("Download finished for", this.urlOrigin)
+    }
+}
+
+//endregion
+
+//region CreateServerFetch
+
+class CreateServerFetch<T, R extends CreateServerFetch_NextStep<T>> {
+    protected options?: ServerFetchOptions<T>;
+
+    protected createNextStep(options: ServerFetchOptions<T>): R {
+        return new CreateServerFetch_NextStep(options) as R;
+    }
+
+    /**
+     * The server will be call with his IP and not his hostname
+     * which will only be set in the headers. It's required when
+     * the DNS doesn't pinpoint to the god server.
+     */
+    useIp(serverOrigin: string, ip: string, options?: ServerFetchOptions<T>): R {
+        let rOptions = ServerFetch.getOptionsFor_useIP<T>(serverOrigin, ip, options);
+        this.options = rOptions;
+        return this.createNextStep(rOptions);
+    }
+
+    useOrigin(serverOrigin: string, options?: ServerFetchOptions<T>): R {
+        let rOptions = ServerFetch.getOptionsFor_useOrigin<T>(serverOrigin, options);
+        this.options = rOptions;
+        return this.createNextStep(rOptions);
+    }
+}
+
+class CreateServerFetch_NextStep<T> {
+    constructor(protected options: ServerFetchOptions<T>) {
+    }
+
+    set_weight(weight: number): this {
+        this.options.weight = weight;
+        return this;
+    }
+
+    set_isMainServer(): this {
+        return this.set_weight(1);
+    }
+
+    set_isBackupServer(): this {
+        return this.set_weight(0);
+    }
+
+    on_beforeRequesting(handler: (url: string, fetchOptions: FetchOptions, data: T)=>void|Promise<void>): this {
+        this.options.beforeRequesting = handler;
+        return this;
+    }
+
+    on_ifServerIsDown(handler: (builder: IfServerDownBuilder<T>)=>void|Promise<void>): this {
+        this.options.ifServerIsDown = async (_fetcher, data) => {
+            const {builder, getResult} = IfServerDownBuilder.newBuilder<T>(data);
+
+            let r = handler(builder);
+            if (r instanceof Promise) await r;
+
+            let options = getResult();
+
+            if (options) {
+                const res: ServerDownResult<T> = {
+                    newServer: ServerFetch.useAsIs(options),
+                    newServerWeight: options?.weight
+                }
+
+                return res;
+            }
+
+            return undefined;
+        }
+
+        return this;
+    }
+
+    do_startServer(handler: () => Promise<number>): this {
+        this.options.doStartServer = handler;
+        return this;
+    }
+
+    do_stopServer(handler: () => Promise<void>): this {
+        this.options.doStopServer = handler;
+        return this;
+    }
+}
+
+class IfServerDownBuilder<T> extends CreateServerFetch<T, CreateServerFetch_NextStep<T>> {
+    constructor(public readonly data: T) {
+        super();
+    }
+
+    static newBuilder<T>(data: T) {
+        const b = new IfServerDownBuilder<T>(data);
+        return {builder: b, getResult: () => b.options};
+    }
+}
+
+//endregion
+
+//region WebSite
+
+export interface FileServerOptions {
+    rootDir: string;
+    replaceIndexHtml: boolean,
+    onNotFound: (req: JopiRequest) => Response|Promise<Response>
+}
+
+export class JopiEasyWebSite {
+    protected readonly origin: string;
+    protected readonly hostName: string;
+    private webSite?: WebSiteImpl;
+    protected readonly options: WebSiteOptions = {};
+
+    protected readonly afterHook: ((webSite: WebSite)=>(Promise<void>))[] = [];
+    protected readonly beforeHook: (()=>Promise<void>)[] = [];
+
+    protected readonly internals: WebSiteInternal;
+    protected _isWebSiteReady: boolean = false;
+
+    protected fileServerOptions: FileServerOptions;
+
+    public readonly events = jk_events.defaultEventGroup;
+
+    constructor(url: string) {
+        setTimeout(async () => {
+            await this.initWebSiteInstance();
+        }, 1);
+
+        const urlInfos = new URL(url);
+        this.hostName = urlInfos.hostname; // 127.0.0.1
+        this.origin = urlInfos.origin; // https://127.0.0.1
+
+        this.internals = {
+            options: this.options,
+            origin: this.origin,
+            hostName: this.hostName,
+            afterHook: this.afterHook,
+            beforeHook: this.beforeHook
+        };
+
+        this.options.onWebSiteReady = [() => {
+            this._isWebSiteReady = true;
+        }];
+
+        if (this.origin.startsWith("https://")) {
+            this.internals.beforeHook.push(async () => {
+                if (!gIsSslCertificateDefined) {
+                    this.internals.options.certificate = useCertificateStore("certs", this.hostName);
+                }
+            })
+        }
+
+        this.fileServerOptions = {
+            rootDir: "public",
+            replaceIndexHtml: true,
+            onNotFound: req => req.res_returnError404_NotFound()
+        };
+
+        this.internals.afterHook.push(async webSite => {
+            webSite.onGET("/**", req => {
+                return req.file_serveFromDir(this.fileServerOptions.rootDir, {
+                    replaceIndexHtml: this.fileServerOptions.replaceIndexHtml,
+                    onNotFound: this.fileServerOptions.onNotFound
+                });
+            });
+        });
+    }
+
+    private async initWebSiteInstance(): Promise<void> {
+        const onWebSiteCreate = (h: (webSite: WebSite) => void|Promise<void>) => {
+            this.internals.afterHook.push(h);
+        }
+
+        if (!this.webSite) {
+            await initLinker(this, onWebSiteCreate);
+
+            for (let hook of this.beforeHook) await hook();
+
+            this.webSite = new WebSiteImpl(this.origin, this.options);
+
+            for (const hook of  this.afterHook) {
+                try {
+                    await hook(this.webSite!);
+                }
+                catch (e: any) {
+                    if (e instanceof Error) {
+                        jk_term.logBgRed("Error when initializing website", this.origin);
+                        jk_term.logRed(e.message);
+                        console.log(e.stack);
+                    }
+                    else {
+                        console.error("Error when initializing website", this.origin);
+                        jk_term.logRed("|-", e.message);
+                    }
+
+                    process.exit(1);
+                }
+            }
+
+            if (!giIsCorsDisabled) {
+                this.webSite.enableCors([this.webSite.welcomeUrl, ...gCorsConstraints]);
+            }
+
+            myServer.setWebsite(this.webSite);
+            await autoStartServer();
+        }
+
+        if (this.internals.onHookWebSite) {
+            this.internals.onHookWebSite(this.webSite);
+        }
+    }
+
+    hook_webSite(hook: (webSite: WebSite) => void): this {
+        this.internals.onHookWebSite = hook;
+        return this;
+    }
+
+    DONE_createWebSite(): JopiApp {
+        return jopiApp;
+    }
+
+    add_httpCertificate(): CertificateBuilder {
+        return new CertificateBuilder(this, this.internals);
+    }
+
+    fastConfigure_fileServer(options: FileServerOptions) {
+        this.fileServerOptions = options;
+        return this;
+    }
+
+    configure_fileServer() {
+        const parent = this;
+
+        const me = {
+            set_rootDir: (rootDir: string) => {
+                this.fileServerOptions.rootDir = rootDir;
+                return me;
+            },
+
+            set_onNotFound: (handler: (req: JopiRequest) => Response|Promise<Response>) => {
+                this.fileServerOptions.onNotFound = handler;
+                return me;
+            },
+
+            DONE_configure_fileServer: (): JopiEasyWebSite => {
+                return parent;
+            }
+        };
+
+        return me;
+    }
+
+    configure_jwtTokenAuth(): JWT_BEGIN {
+        const builder = new JwtTokenAuth_Builder(this, this.internals);
+
+        return {
+            step_setPrivateKey: (privateKey: string) => builder.setPrivateKey_STEP(privateKey)
+        }
+    }
+
+    fastConfigure_jwtTokenAuth<T>(privateKey: string, store: any[] | UserAuthentificationFunction<T>): JopiEasyWebSite {
+        const builder = new JwtTokenAuth_Builder(this, this.internals);
+        let config = builder.setPrivateKey_STEP(privateKey).step_setUserStore();
+
+        if (store instanceof Array) {
+            config.use_simpleLoginPassword().addMany(store)
+        }
+        else {
+            config.use_customStore(store);
+        }
+
+        return this;
+    }
+
+    add_SseEvent(path: string|string[], handler: SseEvent) {
+        this.internals.afterHook.push((webSite) => {
+            webSite.addSseEVent(path, handler);
+        });
+
+        return this;
+    }
+
+    configure_postCss() {
+        const parent: JopiEasyWebSite = this;
+
+        const me = {
+            setPlugin: (handler: PostCssInitializer) => {
+                getBundlerConfig().postCss.initializer = handler;
+                return me;
+            },
+
+            END_configure_postCss() {
+                return parent;
+            }
+        };
+
+        return me;
+    }
+
+    configure_behaviors(): WebSite_ConfigureBehaviors {
+        const parent: JopiEasyWebSite = this;
+
+        const me: WebSite_ConfigureBehaviors = {
+            removeTrailingSlashes(value: boolean = true) {
+                parent.options.removeTrailingSlash = value;
+                return me;
+            },
+
+            DONE_configure_behaviors(): JopiEasyWebSite {
+                return parent;
+            }
+        }
+
+        return me;
+    }
+
+    configure_cache(): WebSite_CacheBuilder {
+        return new WebSite_CacheBuilder(this, this.internals);
+    }
+
+    configure_middlewares(): WebSite_MiddlewareBuilder {
+        return new WebSite_MiddlewareBuilder(this, this.internals);
+    }
+
+    configure_bundler() {
+        const parent: JopiEasyWebSite = this;
+
+        const me = {
+            dontEmbed_ReactJS: () => {
+                me.dontEmbedThis("react", "react-dom");
+                return me;
+            },
+
+            dontEmbedThis: (...packages: string[]) => {
+                let config = getBundlerConfig();
+                if (!config.embed.dontEmbedThis) config.embed.dontEmbedThis = [];
+                config.embed.dontEmbedThis.push(...packages);
+                return me;
+            },
+
+            END_configure_bundler(): JopiEasyWebSite {
+                return parent;
+            }
+        }
+
+        return me;
+    }
+
+    configure_tailwindProcessor() {
+        const parent: JopiEasyWebSite = this;
+
+        const me = {
+            disableTailwind: () => {
+                getBundlerConfig().tailwind.disable = true;
+                return me;
+            },
+
+            setGlobalCssContent: (template: string) => {
+                getBundlerConfig().tailwind.globalCssContent = template;
+                return me;
+            },
+
+            setConfig: (config: TailwindConfig) => {
+                getBundlerConfig().tailwind.config = config;
+                return me;
+            },
+
+            /**
+             * Allows adding extra-sources files to scan.
+             * Can also be motifs. Ex: "./myDir/*.{js,ts,jsx,tsx}"
+             */
+            addExtraSourceFiles: (...files: string[]) => {
+                const config = getBundlerConfig().tailwind;
+                if (!config.extraSourceFiles) config.extraSourceFiles = [];
+                config.extraSourceFiles.push(...files);
+                return me;
+            },
+
+            setGlobalCssFilePath: (filePath: string) => {
+                const config = getBundlerConfig().tailwind;
+                config.globalCssFilePath = filePath;
+                return me;
+            },
+
+            END_configure_tailwindProcessor(): JopiEasyWebSite {
+                return parent;
+            }
+        }
+
+        return me;
+    }
+
+    add_sourceServer<T>(): WebSite_AddSourceServerBuilder<T> {
+        return new WebSite_AddSourceServerBuilder<T>(this, this.internals);
+    }
+
+    add_specialPageHandler(): WebSite_AddSpecialPageHandler {
+        return new WebSite_AddSpecialPageHandler(this, this.internals);
+    }
+
+    on_webSiteReady(listener: () => void) {
+        if (this._isWebSiteReady) {
+            listener();
+            return;
+        }
+
+        this.options.onWebSiteReady!.push(listener);
+        return this;
+    }
+
+    configure_cors() {
+        return new WebSite_ConfigureCors(this);
+    }
+
+    fastConfigure_cors(allowedHosts?: string[]): JopiEasyWebSite {
+        const b = new WebSite_ConfigureCors(this);
+
+        if (allowedHosts) {
+            allowedHosts.forEach(o => b.add_allowedHost(o));
+        }
+
+        return this;
+    }
+}
+
+class JopiEasyWebSite_ExposePrivate extends JopiEasyWebSite {
+    isWebSiteReady() {
+        return this._isWebSiteReady;
+    }
+
+    getInternals(): WebSiteInternal {
+        return this.internals;
+    }
+}
+
+class WebSite_ConfigureCors {
+    constructor(private readonly webSite: JopiEasyWebSite) {
+    }
+
+    add_allowedHost(hostName: string) {
+        try {
+            let url = new URL(hostName);
+            gCorsConstraints.push(url.origin);
+        }
+        catch {
+            throw new Error(`Invalid host name: ${hostName}. Must be a valid URL.`);
+        }
+
+        return this;
+    }
+
+    disable_cors() {
+        giIsCorsDisabled = true;
+        return this;
+    }
+
+    DONE_configure_cors(): JopiEasyWebSite {
+        return this.webSite;
+    }
+}
+
+class WebSite_AddSpecialPageHandler {
+    constructor(private readonly webSite: JopiEasyWebSite, private readonly internals: WebSiteInternal) {
+    }
+
+    END_add_specialPageHandler(): JopiEasyWebSite {
+        return this.webSite;
+    }
+
+    on_404_NotFound(handler: (req: JopiRequest) => Promise<Response>): this {
+        this.internals.afterHook.push(async webSite => {
+            webSite.on404_NotFound(handler);
+        });
+
+        return this;
+    }
+
+    on_500_Error(handler: (req: JopiRequest) => Promise<Response>): this {
+        this.internals.afterHook.push(async webSite => {
+            webSite.on500_Error(handler);
+        });
+
+        return this;
+    }
+
+    on_401_Unauthorized(handler: (req: JopiRequest) => Promise<Response>): this {
+        this.internals.afterHook.push(async webSite => {
+            webSite.on401_Unauthorized(handler);
+        });
+
+        return this;
+    }
+}
+
+class WebSite_AddSourceServerBuilder<T> extends CreateServerFetch<T, WebSite_AddSourceServerBuilder_NextStep<T>> {
+    private serverFetch?: ServerFetch<T>;
+
+    constructor(private readonly webSite: JopiEasyWebSite, private readonly internals: WebSiteInternal) {
+        super();
+
+        this.internals.afterHook.push(async webSite => {
+            if (this.serverFetch) {
+                webSite.addSourceServer(this.serverFetch);
+            }
+        });
+    }
+
+    protected override createNextStep(options: ServerFetchOptions<T>): WebSite_AddSourceServerBuilder_NextStep<T> {
+        return new WebSite_AddSourceServerBuilder_NextStep(this.webSite, this.internals, options);
+    }
+
+    END_add_sourceServer(): JopiEasyWebSite {
+        return this.webSite;
+    }
+
+    add_sourceServer<T>(): WebSite_AddSourceServerBuilder<T> {
+        return new WebSite_AddSourceServerBuilder<T>(this.webSite, this.internals);
+    }
+}
+
+class WebSite_AddSourceServerBuilder_NextStep<T> extends CreateServerFetch_NextStep<T> {
+    constructor(private readonly webSite: JopiEasyWebSite, private readonly internals: WebSiteInternal, options: ServerFetchOptions<T>) {
+        super(options);
+
+        this.internals.afterHook.push(async webSite => {
+            webSite.addSourceServer(ServerFetch.useAsIs(this.options));
+        });
+    }
+
+    END_add_sourceServer(): JopiEasyWebSite {
+        return this.webSite;
+    }
+
+    add_sourceServer<T>(): WebSite_AddSourceServerBuilder<T> {
+        return new WebSite_AddSourceServerBuilder<T>(this.webSite, this.internals);
+    }
+}
+
+class WebSite_MiddlewareBuilder {
+    constructor(private readonly webSite: JopiEasyWebSite, private readonly internals: WebSiteInternal) {
+    }
+
+    add_middleware(method: HttpMethod|undefined, middleware: JopiMiddleware, options?: MiddlewareOptions): WebSite_MiddlewareBuilder {
+        this.internals.afterHook.push(async webSite => {
+            webSite.addGlobalMiddleware(method, middleware, options);
+        });
+
+        return this;
+    }
+
+    add_postMiddleware(method: HttpMethod|undefined, middleware: JopiPostMiddleware, options?: MiddlewareOptions): WebSite_MiddlewareBuilder {
+        this.internals.afterHook.push(async webSite => {
+            webSite.addGlobalPostMiddleware(method, middleware, options);
+        });
+
+        return this;
+    }
+
+    END_configure_middlewares(): JopiEasyWebSite {
+        return this.webSite;
+    }
+}
+
+class WebSite_CacheBuilder {
+    private cache?: PageCache;
+    private onFakeNoUser?: FakeNoUserListener;
+    private readonly rules: CacheRules[] = [];
+
+    constructor(private readonly webSite: JopiEasyWebSite, private readonly internals: WebSiteInternal) {
+        this.internals.afterHook.push(async webSite => {
+            (webSite as WebSiteImpl).setCacheRules(this.rules);
+
+            if (this.onFakeNoUser) {
+                (webSite as WebSiteImpl).setOnFakeNoUser(this.onFakeNoUser);
+            }
+
+            if (this.cache) {
+                webSite.setCache(this.cache);
+            }
+        });
+    }
+
+    on_fakeNoUser(listener: FakeNoUserListener): WebSite_CacheBuilder {
+        this.onFakeNoUser = listener;
+        return this;
+    }
+
+    use_inMemoryCache(options?: InMemoryCacheOptions): WebSite_CacheBuilder {
+        if (options) initMemoryCache(options);
+        this.cache = getInMemoryCache();
+
+        return this;
+    }
+
+    use_fileSystemCache(rootDir: string): WebSite_CacheBuilder {
+        this.cache = new SimpleFileCache(rootDir);
+        return this;
+    }
+
+    add_cacheRules(rules: CacheRules): WebSite_CacheBuilder {
+        this.rules.push(rules);
+        return this;
+    }
+
+    END_configure_cache(): JopiEasyWebSite {
+        return this.webSite;
+    }
+}
+
+interface WebSite_ConfigureBehaviors {
+    removeTrailingSlashes(value: boolean|undefined): WebSite_ConfigureBehaviors;
+    DONE_configure_behaviors(): JopiEasyWebSite;
+}
+
+//endregion
+
+//region Server starting
+
+let gIsAutoStartDone = false;
+
+async function autoStartServer() {
+    if (gIsAutoStartDone) return;
+    gIsAutoStartDone = true;
+
+    await jk_timer.tick(5);
+    await myServer.startServer();
+}
+
+const myServer = getServer();
+
+//endregion
+
+//region Reverse proxy
+
+class ReverseProxyBuilder {
+    private readonly webSite: JopiEasyWebSite_ExposePrivate;
+    private readonly internals: WebSiteInternal;
+
+    constructor(url: string, ref?: RefFor_WebSite) {
+        this.webSite = new JopiEasyWebSite_ExposePrivate(url);
+        if (ref) ref.webSite = this.webSite;
+
+        this.internals = this.webSite.getInternals();
+
+        this.internals.afterHook.push(async webSite => {
+            const handler: JopiRouteHandler = req => {
+                req.headers.set('X-Forwarded-Proto', req.urlInfos.protocol.replace(':', ''));
+                req.headers.set('X-Forwarded-Host', req.urlInfos.host)
+
+                const clientIp = req.coreServer.requestIP(req.coreRequest)?.address;
+                req.headers.set("X-Forwarded-For", clientIp!);
+
+                return req.proxy_directProxyToServer();
+            };
+
+            HTTP_VERBS.forEach(verb => {
+                webSite.onVerb(verb, "/**", handler);
+            });
+        });
+    }
+
+    add_target<T>(): ReverseProxyBuilder_AddTarget<T> {
+        const {builder, getOptions} = ReverseProxyBuilder_AddTarget.newBuilder<T>(this);
+
+        this.internals.afterHook.push(async webSite => {
+            let options = getOptions();
+
+            if (options) {
+                webSite.addSourceServer(ServerFetch.useAsIs<T>(options));
+            }
+        });
+
+        return builder;
+    }
+
+    DONE_create_reverseProxy(): JopiEasyWebSite_ExposePrivate {
+        return this.webSite;
+    }
+}
+
+class ReverseProxyBuilder_AddTarget<T> extends CreateServerFetch<T, ReverseProxyBuilder_AddTarget_NextStep<T>> {
+    static newBuilder<T>(parent: ReverseProxyBuilder): { builder: ReverseProxyBuilder_AddTarget<T>, getOptions: () => ServerFetchOptions<T> | undefined } {
+        const b = new ReverseProxyBuilder_AddTarget<T>(parent);
+        return {builder: b, getOptions: () => b.options};
+    }
+
+    constructor(private readonly parent: ReverseProxyBuilder) {
+        super();
+    }
+
+    DONE_add_target(): ReverseProxyBuilder {
+        return this.parent;
+    }
+}
+
+class ReverseProxyBuilder_AddTarget_NextStep<T> extends CreateServerFetch_NextStep<T> {
+    constructor(private readonly parent: ReverseProxyBuilder, protected options: ServerFetchOptions<T>) {
+        super(options);
+    }
+
+    DONE_add_target(): ReverseProxyBuilder {
+        return this.parent;
+    }
+}
+
+//endregion
+
+//region TLS Certificates
+
+//region CertificateBuilder
+
+let gIsSslCertificateDefined = false;
+
+function useCertificateStore(dirPath: string, hostName: string) {
+    dirPath = path.join(dirPath, hostName);
+
+    let cert:string = "";
+    let key: string = "";
+
+    try {
+        cert = path.resolve(dirPath, "certificate.crt.key")
+        fsc.statfsSync(cert)
+    } catch {
+        console.error("Certificat file not found: ", cert);
+    }
+
+    try {
+        key = path.resolve(dirPath, "certificate.key")
+        fsc.statfsSync(key)
+    } catch {
+        console.error("Certificat key file not found: ", key);
+    }
+
+    return {key, cert};
+}
+
+class CertificateBuilder {
+    constructor(private readonly parent: JopiEasyWebSite, private readonly internals: WebSiteInternal) {
+    }
+
+    generate_localDevCert(saveInDir: string = "certs") {
+        gIsSslCertificateDefined = true;
+
+        this.internals.beforeHook.push(async () => {
+            try {
+                this.internals.options.certificate = await myServer.createDevCertificate(this.internals.hostName, saveInDir);
+            }
+            catch {
+                console.error(`Can't create ssl certificate for ${this.internals.hostName}. Is mkcert tool installed ?`);
+            }
+        });
+
+        return {
+            DONE_add_httpCertificate: () => this.parent
+        }
+    }
+
+    use_dirStore(dirPath: string) {
+        gIsSslCertificateDefined = true;
+        this.internals.options.certificate = useCertificateStore(dirPath, this.internals.hostName);
+        return { DONE_add_httpCertificate: () => this.parent }
+    }
+
+    generate_letsEncryptCert(email: string) {
+        gIsSslCertificateDefined = true;
+
+        const params: LetsEncryptParams = {email};
+
+        this.internals.afterHook.push(async webSite => {
+            await getLetsEncryptCertificate(webSite, params);
+        });
+
+        return new LetsEncryptCertificateBuilder(this.parent, params);
+    }
+}
+
+//endregion
+
+//region LetsEncryptCertificateBuilder
+
+class LetsEncryptCertificateBuilder {
+    constructor(private readonly parent: JopiEasyWebSite, private readonly params: LetsEncryptParams) {
+    }
+
+    DONE_add_httpCertificate() {
+        return this.parent;
+    }
+
+    enable_production(value: boolean = true) {
+        this.params.isProduction = value;
+        return this;
+    }
+
+    disable_log() {
+        this.params.log = false;
+        return this;
+    }
+
+    set_certificateDir(dirPath: string) {
+        this.params.certificateDir = dirPath;
+        return this;
+    }
+
+    force_expireAfter_days(dayCount: number) {
+        this.params.expireAfter_days = dayCount;
+        return this;
+    }
+
+    force_timout_sec(value: number) {
+        this.params.timout_sec = value;
+        return this;
+    }
+
+    if_timeOutError(handler: OnTimeoutError) {
+        this.params.onTimeoutError = handler;
+        return this;
+    }
+}
+
+//endregion
+
+//endregion
+
+//region JWT Tokens
+
+//region Interfaces
+
+interface JWT_BEGIN {
+    step_setPrivateKey(privateKey: string): JWT_StepBegin_SetUserStore;
+}
+
+interface JWT_FINISH {
+    DONE_configure_jwtTokenAuth(): JopiEasyWebSite;
+}
+
+interface JWT_StepBegin_SetUserStore {
+    step_setUserStore(): JWT_Step_SetUserStore;
+}
+
+interface JWT_Step_SetUserStore {
+    use_simpleLoginPassword(): JWT_UseSimpleLoginPassword;
+
+    use_customStore<T>(store: UserAuthentificationFunction<T>): JWT_UseCustomStore;
+}
+
+interface JWT_UseCustomStore {
+    DONE_use_customStore(): JWT_StepBegin_Configure;
+}
+
+interface JWT_UseSimpleLoginPassword {
+    getStoreRef(h: GetValue<UserStore_WithLoginPassword>): JWT_UseSimpleLoginPassword;
+    addOne(login: string, password: string, userInfos: UserInfos): JWT_UseSimpleLoginPassword;
+    addMany(users: UserInfos_WithLoginPassword[]): JWT_UseSimpleLoginPassword;
+    DONE_use_simpleLoginPassword(): JWT_StepBegin_Configure;
+}
+
+interface JWT_StepBegin_Configure {
+    stepConfigure(): JWT_Step_Configure;
+    DONE_setUserStore(): JWT_FINISH;
+}
+
+interface JWT_Step_Configure {
+    set_cookieDuration(expirationDuration_hours: number): JWT_Step_Configure;
+    DONE_stepConfigure(): JWT_FINISH;
+}
+
+
+//endregion
+
+class JwtTokenAuth_Builder {
+    constructor(private readonly parent: JopiEasyWebSite, private readonly internals: WebSiteInternal) {
+    }
+
+    FINISH() {
+        return {
+            DONE_configure_jwtTokenAuth: () => this.parent
+        }
+    }
+
+    //region setPrivateKey_STEP (BEGIN / root)
+
+    setPrivateKey_STEP(privateKey: string): JWT_StepBegin_SetUserStore {
+        this.internals.afterHook.push(async webSite => {
+            webSite.setJwtSecret(privateKey);
+        });
+
+        return {
+            step_setUserStore: () => this.setUserStore_STEP()
+        }
+    }
+
+    //endregion
+
+    //region setUserStore_STEP
+
+    private loginPasswordStore?: UserStore_WithLoginPassword;
+
+    setUserStore_STEP(): JWT_Step_SetUserStore {
+        const self = this;
+
+        return {
+            use_simpleLoginPassword: () => {
+                this.loginPasswordStore = new UserStore_WithLoginPassword();
+
+                this.internals.afterHook.push(async webSite => {
+                    this.loginPasswordStore!.setAuthHandler(webSite);
+                });
+
+                return this.useSimpleLoginPassword_BEGIN()
+            },
+
+            use_customStore<T>(store: UserAuthentificationFunction<T>) { return self.useCustomStore_BEGIN<T>(store) }
+        }
+    }
+
+    _setUserStore_NEXT(): JWT_StepBegin_Configure {
+        return {
+            stepConfigure: () => this.stepConfigure(),
+            DONE_setUserStore: () => this.FINISH(),
+        }
+    }
+
+    //region useCustomStore
+
+    useCustomStore_BEGIN<T>(store: UserAuthentificationFunction<T>) {
+        this.internals.afterHook.push(async webSite => {
+            webSite.setAuthHandler(store);
+        })
+
+        return {
+            DONE_use_customStore : () => this.useCustomStore_DONE()
+        }
+    }
+
+    useCustomStore_DONE() {
+        return this._setUserStore_NEXT();
+    }
+
+    //endregion
+
+    //region useSimpleLoginPassword
+
+    useSimpleLoginPassword_BEGIN(): JWT_UseSimpleLoginPassword {
+        return this._useSimpleLoginPassword_REPEAT();
+    }
+
+    useSimpleLoginPassword_DONE(): JWT_StepBegin_Configure {
+        return this._setUserStore_NEXT();
+    }
+
+    _useSimpleLoginPassword_REPEAT(): JWT_UseSimpleLoginPassword {
+        return {
+            getStoreRef: (h: GetValue<UserStore_WithLoginPassword>) => {
+                h(this.loginPasswordStore!);
+                return this._useSimpleLoginPassword_REPEAT();
+            },
+
+            addOne: (login: string, password: string, userInfos: UserInfos) => this.useSimpleLoginPassword_addOne(login, password, userInfos),
+            addMany: (users: UserInfos_WithLoginPassword[]) => this.useSimpleLoginPassword_addMany(users),
+            DONE_use_simpleLoginPassword: () => this.useSimpleLoginPassword_DONE()
+        }
+    }
+
+    useSimpleLoginPassword_addOne(login: string, password: string, userInfos: UserInfos): JWT_UseSimpleLoginPassword {
+        this.loginPasswordStore!.add({login, password, userInfos});
+
+        return this._useSimpleLoginPassword_REPEAT();
+    }
+
+    useSimpleLoginPassword_addMany(users: UserInfos_WithLoginPassword[]): JWT_UseSimpleLoginPassword {
+        users.forEach(e => this.loginPasswordStore!.add(e));
+        return this._useSimpleLoginPassword_REPEAT();
+    }
+
+    //endregion
+
+    //endregion
+
+    //region setTokenStore
+
+    stepConfigure(): JWT_Step_Configure {
+        return {
+            set_cookieDuration: (expirationDuration_hours: number) => this.setTokenStore_useCookie(expirationDuration_hours),
+            DONE_stepConfigure: () => this.FINISH()
+        }
+    }
+
+    setTokenStore_useCookie(expirationDuration_hours: number = 3600) {
+        this.internals.afterHook.push(async webSite => {
+            webSite.setJwtTokenStore((_token, cookieValue, req) => {
+                req.cookie_addCookieToRes("authorization", cookieValue, {maxAge: jk_timer.ONE_HOUR * expirationDuration_hours})
+            });
+        });
+
+        return this.stepConfigure();
+    }
+
+    //endregion
+}
+
+//endregion
+
+//region Config
+
+let gCorsConstraints: string[] = [];
+let giIsCorsDisabled = false;
+
+//endregion
+
+//region Helpers
+
+type GetValue<T> = (value: T) => void;
+
+interface WebSiteInternal {
+    origin: string;
+    hostName: string;
+    options: WebSiteOptions;
+
+    afterHook: ((webSite: WebSite) => void|Promise<void>)[];
+    beforeHook: (() => Promise<void>)[];
+
+    onHookWebSite?: (webSite: WebSite) => void;
+}
+
+//endregion

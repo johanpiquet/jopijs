@@ -1,0 +1,108 @@
+import process from 'node:process';
+import type {WebSite} from "../@core";
+import * as jk_events from "jopi-toolkit/jk_events";
+import {isBunJS} from "jopi-toolkit/jk_what";
+import {DontCallBeforeElapsed} from "jopi-toolkit/jk_tools";
+
+export function isBrowserRefreshEnabled(): boolean {
+    return hasJopiDevFlag() || hasJopiDevUiFlag();
+}
+
+/**
+ * JOPI_DEV: on source change, restart the server and refresh the browser.
+ * It's slower than JOPI_DEV_UI but allows testing server changes.
+ */
+export function hasJopiDevFlag() {
+    return process.env.JOPI_DEV === "1";
+}
+
+/**
+ * JOPI_DEV_UI: on source change, don't restart the server
+ * but rebuild the UI pages and refresh the browser.
+ * (with bun: it uses React HMR, which is a special case)
+ *
+ * -> It's way faster than JOPI_DEV but can have some inconsistency
+ *    when modifying the @alias directory content.
+ */
+export function hasJopiDevUiFlag() {
+    return process.env.JOPI_DEV_UI === "1";
+}
+
+/**
+ * Single page mode is when the internal bundle compiles the pages one by one.
+ * It's used for development to have a fast starting time.
+ *
+ * The opposite (when not single-page mode) is to compile all the pages in one go.
+ * This produces an optimized bundle, without duplicates, but can be slow to start.
+ */
+export function isSinglePageMode() {
+    if (gSinglePageMode===undefined) {
+        if (isReactHMR()) gSinglePageMode = false;
+        else gSinglePageMode = hasJopiDevFlag() || hasJopiDevUiFlag();
+    }
+
+    return gSinglePageMode;
+}
+//
+let gSinglePageMode: boolean|undefined;
+
+/**
+ * React HMR is when the browser automatically refreshes his content
+ * but without a full refresh. It does a clever refresh by removing old
+ * JavaScript and injecting the new-one, before re-rendering the React components
+ * without losing their previous state.
+ */
+export function isReactHMR() {
+    return hasJopiDevUiFlag() && isBunJS;
+}
+
+function sse_onChange() {
+    const event = new EventSource('/_jopirw_/bundler');
+    let isFirstConnection = true;
+
+    // This allows refreshing the browser when
+    // the connection is lost, and the browser connects again.
+    //
+    event.addEventListener('open', () => {
+        if (isFirstConnection) isFirstConnection = false;
+        else window.location.reload();
+    });
+
+    // This allows refreshing the browser when
+    // the server sends a signal to the browser.
+    //
+    event.addEventListener("change", () => {
+        console.log("SSE Event [/_jopirw_/bundler] : Refreshing browser");
+        window.location.reload();
+    });
+}
+//
+let g_sse_onChange: string|undefined;
+
+export function getBrowserRefreshScript() {
+    if (!g_sse_onChange) {
+        g_sse_onChange = sse_onChange.toString();
+    }
+
+    return `(${g_sse_onChange})()`;
+}
+
+export function installBrowserRefreshSseEvent(webSite: WebSite) {
+    webSite.addSseEVent("/_jopirw_/bundler", {
+        getWelcomeMessage() {
+            return "Jopi - Browser refresh";
+        },
+
+        handler(controller) {
+            jk_events.addListener("@jopi.bundler.watch.afterRebuild", () => {
+                // Can occur multi times with single-page mode.
+                if (!gLimitBrowserRefresh.check()) return;
+
+                console.log("🔥 JopiN - UI change detected: refreshing browser");
+                controller.send("change", "updated");
+            });
+        }
+    });
+}
+
+const gLimitBrowserRefresh = new DontCallBeforeElapsed(2000);

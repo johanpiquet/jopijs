@@ -1,0 +1,1 @@
+It extends ui-core with optional functionalities.
