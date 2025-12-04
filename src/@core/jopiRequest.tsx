@@ -1019,28 +1019,7 @@ export class JopiRequest {
      * a generic anonymous page.
      */
     public user_fakeNoUsers() {
-        let fakeNoUser: FakeNoUserListener|undefined;
-
-        if (this._onFakeNoUser) {
-            fakeNoUser = this._onFakeNoUser;
-        } else if ((this.webSite as WebSiteImpl).fakeNoUser) {
-            fakeNoUser = (this.webSite as WebSiteImpl).fakeNoUser;
-        }
-
-        if (fakeNoUser) {
-            let r = fakeNoUser(this);
-            if (r === false) return;
-        }
-
         this.isFakingNoUsers = true;
-    }
-
-    /**
-     * Allows setting a listener which is call when `fakeNoUsers`is called.
-     * If this listener explicitly returns false, then the call to fakeNoUsers is ignored.
-     */
-    public user_onFakeNoUser(handler: (req: JopiRequest) => void|boolean) {
-        this._onFakeNoUser = handler;
     }
 
     public user_getUserInfos(): UserInfos | undefined {
@@ -1067,7 +1046,6 @@ export class JopiRequest {
     }
 
     private isFakingNoUsers: boolean = false;
-    private _onFakeNoUser?: FakeNoUserListener;
 
     private hasNoUserInfos: boolean = false;
     private userInfos?: UserInfos;
@@ -1261,8 +1239,6 @@ export interface JopiRequestSpyData {
 }
 
 export type JopiRequestSpy = (data: JopiRequestSpyData, req: JopiRequest) => void;
-
-export type FakeNoUserListener = (req: JopiRequest) => void|boolean;
 
 export enum ContentTypeCategory {
     OTHER,

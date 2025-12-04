@@ -138,6 +138,18 @@ class RouteConfig_OnGET extends RouteConfig_Core {
 
         routeInfos.beforeCheckingCache = handler;
     }
+
+    /**
+     * Define a function which is called when the response is not in the cache.
+     * If this function is not set, then a call to `req.user_fakeNoUsers()` is done
+     * to force the cached page to be anonymous and not bound to a specific user.
+     */
+    cache_ifNotInCache(handler: (req: JopiRequest) => void): void {
+        let routeInfos = this.webSite.getRouteInfos("GET", this.route);
+        if (!routeInfos) return;
+
+        routeInfos.ifNotInCache = handler;
+    }
 }
 
 interface MenuItemForRouteConfig {

@@ -1,6 +1,6 @@
 // noinspection JSUnusedGlobalSymbols
 
-import {type FakeNoUserListener, JopiRequest} from "./jopiRequest.tsx";
+import {JopiRequest} from "./jopiRequest.tsx";
 import {ServerFetch} from "./serverFetch.ts";
 import {LoadBalancer} from "./loadBalancing.ts";
 import {type CoreServer, type SseEvent, type WebSocketConnectionInfos} from "./jopiServer.ts";
@@ -174,6 +174,13 @@ export interface CacheRules {
      * a response and bypass the request cycle.
      */
     beforeCheckingCache?: (req: JopiRequest) => Promise<Response | undefined | void>;
+
+    /**
+     * Is called if the response is not in the cache.
+     * If this function is not set, then a call to `req.user_fakeNoUsers()` is done
+     * to force the cached page to be anonymous and not bound to a specific user.
+     */
+    ifNotInCache(req: JopiRequest, isPage: boolean): void;
 }
 
 export class WebSiteImpl implements WebSite {
@@ -435,6 +442,7 @@ export class WebSiteImpl implements WebSite {
                 const beforeCheckingCache = routeInfos.beforeCheckingCache;
                 const afterGetFromCache = routeInfos.afterGetFromCache;
                 const beforeAddToCache = req.routeInfos.beforeAddToCache;
+                const ifNotInCache = req.routeInfos.ifNotInCache;
 
                 extraMiddlewares.push(async function () {
                     if (beforeCheckingCache) {
@@ -461,7 +469,9 @@ export class WebSiteImpl implements WebSite {
 
                     logCache_notInCache.info(w => w(`${req.method} request`, {url: req.urlInfos?.href}));
 
-                    if (isPage) {
+                    if (ifNotInCache) {
+                        ifNotInCache(req, isPage);
+                    } else if (isPage) {
                         // Allows creating anonymous pages.
                         req.user_fakeNoUsers();
                     }
@@ -559,7 +569,6 @@ export class WebSiteImpl implements WebSite {
     //region Cache
 
     mainCache: PageCache;
-    fakeNoUser?: FakeNoUserListener;
     mustUseAutomaticCache: boolean = true;
     private cacheRules: CacheRules[] = [];
     private headersToCache: string[] = ["content-type", "etag", "last-modified"];
@@ -589,10 +598,6 @@ export class WebSiteImpl implements WebSite {
         this.cacheRules = rules;
     }
 
-    setOnFakeNoUser(listener: FakeNoUserListener|undefined) {
-        this.fakeNoUser = listener;
-    }
-
     private applyCacheRules(routeInfos: WebSiteRouteInfos, path: string) {
         for (let rule of this.cacheRules) {
             if (rule.regExp) {
@@ -609,6 +614,10 @@ export class WebSiteImpl implements WebSite {
 
             if (!routeInfos.beforeCheckingCache) {
                 routeInfos.beforeCheckingCache = rule.beforeCheckingCache;
+            }
+
+            if (!routeInfos.ifNotInCache) {
+                routeInfos.ifNotInCache = rule.ifNotInCache;
             }
         }
     }
@@ -950,6 +959,11 @@ export interface WebSiteRouteInfos {
      * If a response is returned/void, then directly returns this response.
      */
     beforeCheckingCache?: (req: JopiRequest) => Promise<Response|undefined|void>;
+
+    /**
+     * Is executed if the response is not in the cache.
+     */
+    ifNotInCache?: (req: JopiRequest, isPage: boolean) => void;
 
     /**
      * Is executed before adding the response to the cache.
