@@ -48,7 +48,7 @@ export async function addNameIntoFile(filePath: string, name: string = jk_fs.bas
 
 /**
  * Write the file content only if the file is missing or his content is not the same.
- * Allows to avoid triggering a file change detection event.
+ * Allows avoiding triggering a file change detection event.
  */
 export async function writeTextToFileIfMismatch(filePath: string, content: string) {
     if (!await jk_fs.isFile(filePath)) {
@@ -154,9 +154,15 @@ export class CodeGenWriter {
     constructor(public readonly dir: Directories) {
     }
 
-    toJavascriptFileName(filePath: string): string {
+    /**
+     * Allows creating an import path targeting the JavaScript version
+     * and compatible with import statements (linux path format)
+     */
+    toJavascriptPathForImport(filePath: string): string {
         let idx = filePath.lastIndexOf(".");
-        if (idx!==-1) return filePath.substring(0, idx) + ".js";
+        if (idx!==-1) filePath = filePath.substring(0, idx) + ".js";
+
+        filePath = filePath.replace(/\\/g, "/");
         return filePath;
     }
 
