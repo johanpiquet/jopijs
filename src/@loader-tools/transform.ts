@@ -20,7 +20,7 @@ export async function transformFile(filePath: string, options: string): Promise<
         // The matter is that the generated code can't be compatible with import and require
         // at the same time.
         //
-        // Moreover, bun.js natif implementation seems way faster.
+        // Moreover, bun.js native implementation seems way faster.
         //
         text = await transform_json(filePath);
     }
@@ -59,7 +59,22 @@ async function transform_css(sourceFilePath: string) {
     return `export default ${JSON.stringify(sourceFilePath)};`;
 }
 
+/**
+ * This function is called each time we import a resource.
+ *
+ * It will:
+ * - Inline the resource as a data-url if it's small enough and of the good type (image).
+ * - Return a virtual URL if the resource is not inlined.
+ *
+ * This virtual URL allows responding to the fact that we don't know
+ * the final URL of the resource until the bundling is done since here
+ * the processing of import is the very first step done by Node/Bun.js when starting.
+ */
 async function transform_filePath(sourceFilePath: string) {
+    if (await canInline(sourceFilePath)) {
+        return transform_inline(sourceFilePath);
+    }
+
     let virtualUrl = getVirtualUrlForFile(sourceFilePath);
 
     if (!virtualUrl?.url) {
@@ -77,6 +92,32 @@ if (typeof(global)!=="undefined") {
     if (window.jopiAddVirtualUrl) window.jopiAddVirtualUrl(${JSON.stringify(virtualUrl)}, false);
 }
 export default __URL__;`
+}
+
+/**
+ * The list of file extensions which can be inlined.
+ */
+const gCanInlineExtensions = [".png", ".jpg", ".jpeg", ".gif", ".svg"];
+
+/**
+ * Check if the file can be inlined.
+ * It must be of the good type (see gCanInlineExtensions).
+ * And have a size inferior to the max size allowed.
+ */
+async function canInline(filePath: string): Promise<boolean> {
+    let idx = filePath.lastIndexOf(".");
+    if (idx===-1) return false;
+
+    let ext = filePath.substring(idx);
+    if (!gCanInlineExtensions.includes(ext)) return false;
+
+    const config = getPackageJsonConfig();
+    let maxSize = config ? config.inlineMaxSize_ko : INLINE_MAX_SIZE_KO;
+
+    let fileSize = Math.trunc(await jk_fs.getFileSize(filePath) / 1024);
+    return fileSize <= maxSize;
+
+
 }
 
 async function transform_json(filePath: string) {
@@ -115,14 +156,14 @@ async function transform_inline(filePath: string) {
     if ((type==="text")||(type==="css")) {
         resText = await jk_fs.readTextFromFile(filePath);
     } else {
-        const config = getPackageJsonConfig();
+        /*const config = getPackageJsonConfig();
         let maxSize = config ? config.inlineMaxSize_ko : INLINE_MAX_SIZE_KO;
 
         let fileSize = Math.trunc(await jk_fs.getFileSize(filePath) / 1024);
 
         if (fileSize > maxSize) {
             return transform_filePath(filePath);
-        }
+        }*/
 
         const buffer: Buffer = await fs.readFile(filePath);
         const mimeType = jk_fs.getMimeTypeFromName(filePath);
