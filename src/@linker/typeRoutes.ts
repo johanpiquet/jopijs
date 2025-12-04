@@ -24,9 +24,9 @@ export default class TypeRoutes extends ArobaseType {
     async beginGeneratingCode(writer: CodeGenWriter): Promise<void> {
         for (let item of Object.values(this.registry)) {
             if (item.verb==="PAGE") {
-                this.bindPage(item.route, item.filePath, item.attributes);
+                this.bindPage(writer, item.route, item.filePath, item.attributes);
             } else {
-                this.bindVerb(item.verb, item.route, item.filePath, item.attributes);
+                this.bindVerb(writer, item.verb, item.route, item.filePath, item.attributes);
             }
         }
 
@@ -77,13 +77,13 @@ export default class TypeRoutes extends ArobaseType {
         await this.scanDir(p.arobaseDir, "/", dirAttributes);
     }
 
-    private bindPage(route: string, filePath: string, attributes: RouteAttributes) {
+    private bindPage(writer: CodeGenWriter, route: string, filePath: string, attributes: RouteAttributes) {
         let routeId = "r" + (this.routeCount++);
         let srcFilePath = jk_fs.getRelativePath(this.cwdDir, filePath);
 
         filePath = jk_app.getCompiledFilePathFor(filePath);
         let distFilePath = jk_fs.getRelativePath(this.outputDir, filePath);
-        distFilePath = jk_fs.win32ToLinuxPath(distFilePath);
+        distFilePath = writer.toPathForImport(distFilePath, false);
 
         let routeBindingParams = {route, attributes, filePath: srcFilePath};
 
@@ -91,9 +91,10 @@ export default class TypeRoutes extends ArobaseType {
         this.sourceCode_body += `\n    await routeBindPage(webSite, c_${routeId}, ${JSON.stringify(routeBindingParams)});`
     }
 
-    private bindVerb(verb: string, route: string, filePath: string, attributes: RouteAttributes) {
+    private bindVerb(writer: CodeGenWriter, verb: string, route: string, filePath: string, attributes: RouteAttributes) {
         let routeId = "r" + (this.routeCount++);
         let relPath = jk_fs.getRelativePath(this.outputDir, filePath);
+        relPath = writer.toPathForImport(relPath, false);
 
         let routeBindingParams = {verb, route, attributes, filePath};
         this.sourceCode_header += `\nimport f_${routeId} from "${relPath}";`;

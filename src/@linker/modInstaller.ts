@@ -5,7 +5,6 @@ import {
     ModuleDirProcessor,
     resolveFile
 } from "./engine.ts";
-import * as jk_fs from "jopi-toolkit/jk_fs";
 
 /**
  * Search the uiInstall.ts and serverInstall.ts files
@@ -29,7 +28,7 @@ export default class ModInstaller extends ModuleDirProcessor {
             i++;
 
             let relPath = writer.makePathRelativeToOutput(uiInitFile);
-            if (!writer.isTypeScriptOnly) relPath = writer.toJavascriptPathForImport(relPath);
+            relPath = writer.toPathForImport(relPath, !writer.isTypeScriptOnly);
 
             writer.genAddToInstallFile(InstallFileType.browser, FilePart.imports, `\nimport modUiInit${i} from "${relPath}";`);
             writer.genAddToInstallFile(InstallFileType.browser, FilePart.footer, `\n    modUiInit${i}(registry);`)
@@ -43,7 +42,7 @@ export default class ModInstaller extends ModuleDirProcessor {
             i++;
 
             let relPath = writer.makePathRelativeToOutput(serverInitFile);
-            if (!writer.isTypeScriptOnly) relPath = writer.toJavascriptPathForImport(relPath);
+            relPath = writer.toPathForImport(relPath, !writer.isTypeScriptOnly);
 
             writer.genAddToInstallFile(InstallFileType.server, FilePart.imports, `\nimport modServerInit${i} from "${relPath}";`);
             writer.genAddToInstallFile(InstallFileType.server, FilePart.body, `\n    await modServerInit${i}(registry);`)

@@ -155,12 +155,13 @@ export class CodeGenWriter {
     }
 
     /**
-     * Allows creating an import path targeting the JavaScript version
-     * and compatible with import statements (linux path format)
+     * Allows creating a path compatible with import statements (linux path format)
      */
-    toJavascriptPathForImport(filePath: string): string {
-        let idx = filePath.lastIndexOf(".");
-        if (idx!==-1) filePath = filePath.substring(0, idx) + ".js";
+    toPathForImport(filePath: string, convertToJsExt: boolean): string {
+        if (convertToJsExt) {
+            let idx = filePath.lastIndexOf(".");
+            if (idx !== -1) filePath = filePath.substring(0, idx) + ".js";
+        }
 
         filePath = filePath.replace(/\\/g, "/");
         return filePath;

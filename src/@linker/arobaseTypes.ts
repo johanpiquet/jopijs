@@ -202,8 +202,8 @@ export class Type_ArobaseList extends ArobaseType {
             let entryPoint = this.resolveEntryPointFor(list, item);
             let relPath = jk_fs.getRelativePath(outDir_fullPath, entryPoint);
 
-            srcCode += `import I${count} from "${relPath}";\n`;
-            distCode += `import I${count} from "${writer.toJavascriptPathForImport(relPath)}";\n`;
+            srcCode += `import I${count} from "${writer.toPathForImport(relPath, false)}";\n`;
+            distCode += `import I${count} from "${writer.toPathForImport(relPath, true)}";\n`;
 
             count++;
         }
@@ -306,8 +306,8 @@ export class Type_ArobaseChunk extends ArobaseType {
         let outDir = jk_fs.join(writer.dir.output_src, this.getGenOutputDir(item));
         let entryPoint = jk_fs.getRelativePath(outDir, item.entryPoint);
 
-        let srcCode = writer.AI_INSTRUCTIONS + `import C from "${entryPoint}";\nexport default C;`;
-        let distCode = writer.AI_INSTRUCTIONS + `import C from "${writer.toJavascriptPathForImport(entryPoint)}";\nexport default C;`;
+        let srcCode = writer.AI_INSTRUCTIONS + `import C from "${writer.toPathForImport(entryPoint, false)}";\nexport default C;`;
+        let distCode = writer.AI_INSTRUCTIONS + `import C from "${writer.toPathForImport(entryPoint, true)}";\nexport default C;`;
 
         await writer.writeCodeFile({
             fileInnerPath: jk_fs.join(this.getGenOutputDir(item), targetName),
