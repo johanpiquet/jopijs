@@ -29,7 +29,7 @@ export default class ModInstaller extends ModuleDirProcessor {
             i++;
 
             let relPath = writer.makePathRelativeToOutput(uiInitFile);
-            if (!writer.isTypeScriptOnly) relPath = writer.toJavascriptFileName(relPath);
+            if (!writer.isTypeScriptOnly) relPath = writer.toJavascriptPathForImport(relPath);
 
             writer.genAddToInstallFile(InstallFileType.browser, FilePart.imports, `\nimport modUiInit${i} from "${relPath}";`);
             writer.genAddToInstallFile(InstallFileType.browser, FilePart.footer, `\n    modUiInit${i}(registry);`)
@@ -43,7 +43,7 @@ export default class ModInstaller extends ModuleDirProcessor {
             i++;
 
             let relPath = writer.makePathRelativeToOutput(serverInitFile);
-            if (!writer.isTypeScriptOnly) relPath = writer.toJavascriptFileName(relPath);
+            if (!writer.isTypeScriptOnly) relPath = writer.toJavascriptPathForImport(relPath);
 
             writer.genAddToInstallFile(InstallFileType.server, FilePart.imports, `\nimport modServerInit${i} from "${relPath}";`);
             writer.genAddToInstallFile(InstallFileType.server, FilePart.body, `\n    await modServerInit${i}(registry);`)
