@@ -3,6 +3,7 @@ import * as jk_tools from "jopi-toolkit/jk_tools";
 import * as jk_term from "jopi-toolkit/jk_term";
 import * as jk_what from "jopi-toolkit/jk_what";
 import * as jk_events from "jopi-toolkit/jk_events";
+import * as jk_app from "jopi-toolkit/jk_app";
 import {PriorityLevel} from "jopi-toolkit/jk_tools";
 
 export {PriorityLevel} from "jopi-toolkit/jk_tools";
@@ -762,6 +763,7 @@ let gDir_ProjectSrc: string;
 let gDir_ProjectDist: string;
 let gDir_outputSrc: string;
 let gDir_outputDst: string;
+let gIsTypeScriptOnly: boolean;
 
 export function getWriter(): CodeGenWriter {
     return gCodeGenWriter;
@@ -777,6 +779,21 @@ export function getServerInstallScript() {
     return jk_fs.join(gDir_outputDst, "installServer.js");
 }
 
+/**
+ * Allows detecting if the project is a TypeScript-only project.
+ * Which means:
+ * - We use bun.js and execute a TypeScript file.
+ * - Or the same thing with a recent version of Node.js
+ */
+function detectIfTypeScriptOnly(_importMeta: any) {
+    // Allow avoiding Node.js with direct TypeScript execution.
+    if (jk_what.isNodeJS) return false;
+
+    let mainFile = jk_app.getApplicationMainFile();
+    if (!mainFile) return false;
+    return mainFile.endsWith(".ts") || mainFile.endsWith(".tsx");
+}
+
 export interface Directories {
     project: string;
     project_src: string;
@@ -786,8 +803,6 @@ export interface Directories {
     output_src: string;
     output_dist: string;
 }
-
-let gIsTypeScriptOnly: boolean;
 
 export async function compile(importMeta: any, config: LinkerConfig, isRefresh = false): Promise<void> {
     async function searchLinkerScript(): Promise<string|undefined> {
@@ -812,7 +827,7 @@ export async function compile(importMeta: any, config: LinkerConfig, isRefresh =
     gDir_outputSrc = jk_fs.join(gDir_ProjectSrc, "_jopiLinkerGen");
     gDir_outputDst = jk_fs.join(gDir_ProjectDist, "_jopiLinkerGen");
 
-    gIsTypeScriptOnly = !importMeta.filename.endsWith(".js");
+    gIsTypeScriptOnly = detectIfTypeScriptOnly(importMeta);
 
     gCodeGenWriter = new CodeGenWriter({
         project: gDir_ProjectRoot,
