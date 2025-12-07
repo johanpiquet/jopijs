@@ -1,5 +1,4 @@
 import {WebSiteImpl} from "../jopiWebSite.tsx";
-import {serverInitChronos} from "../internalTools.ts";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_events from "jopi-toolkit/jk_events";
 import {getBundleDirPath} from "./common.ts";
@@ -38,8 +37,6 @@ export interface CreateBundleParams {
 }
 
 export async function createBundle(webSite: WebSiteImpl): Promise<void> {
-    serverInitChronos.start("createBrowserBundle", "Time for building browser bundler")
-
     const genDir = getBundleDirPath(webSite);
     const outputDir = jk_fs.join(genDir, "out");
 
@@ -71,7 +68,6 @@ export async function createBundle(webSite: WebSiteImpl): Promise<void> {
     await executeBundler(gCreateBundleData);
 
     configureServer(outputDir);
-    serverInitChronos.end();
 }
 
 let gCreateBundleData: CreateBundleParams|undefined;

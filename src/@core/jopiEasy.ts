@@ -12,7 +12,6 @@ import {type FetchOptions, type ServerDownResult, ServerFetch, type ServerFetchO
 import {getLetsEncryptCertificate, type LetsEncryptParams, type OnTimeoutError} from "./letsEncrypt.ts";
 import {type UserInfos_WithLoginPassword, UserStore_WithLoginPassword} from "./userStores.ts";
 import {getBundlerConfig, type PostCssInitializer} from "./bundler/config.ts";
-import {serverInitChronos} from "./internalTools.ts";
 import {getInMemoryCache, initMemoryCache, type InMemoryCacheOptions} from "./caches/InMemoryCache.ts";
 import {SimpleFileCache} from "./caches/SimpleFileCache.ts";
 import {
@@ -24,8 +23,13 @@ import {
 } from "jopijs/crawler";
 import {JopiRequest} from "./jopiRequest.ts";
 import {
-    type UserAuthentificationFunction, type CacheRules, type HttpMethod, type JopiMiddleware, type JopiPostMiddleware,
-    type JopiRouteHandler, type MiddlewareOptions,
+    type CacheRules,
+    type HttpMethod,
+    type JopiMiddleware,
+    type JopiPostMiddleware,
+    type JopiRouteHandler,
+    type MiddlewareOptions,
+    type UserAuthentificationFunction,
     type UserInfos,
     type WebSite,
     WebSiteImpl,
@@ -37,8 +41,7 @@ import {HTTP_VERBS} from "./publicTools.ts";
 import {getPackageJsonConfig} from "jopijs/loader-tools";
 import {initLinker} from "./linker.ts";
 import {logServer_startApp} from "./_logs.ts";
-
-serverInitChronos.start("jopiEasy lib");
+import type {LoggerGroupCallback} from "jopi-toolkit/jk_logs";
 
 class JopiApp {
     private _isStartAppSet: boolean = false;
@@ -55,11 +58,12 @@ class JopiApp {
         if (this._isStartAppSet) throw "App is already started";
         this._isStartAppSet = true;
 
-        const logEnd = logServer_startApp.beginInfo("Starting Application");
         jk_app.setApplicationMainFile(importMeta.filename);
-        doStart().then(logEnd);
+        doStart().then();
     }
 }
+
+let gMetricsOnWebsiteStarted: LoggerGroupCallback = logServer_startApp.beginInfo("Starting Application");
 
 let gWebSiteCreated = false;
 
@@ -467,6 +471,10 @@ export class JopiEasyWebSite {
 
         if (this.internals.onHookWebSite) {
             this.internals.onHookWebSite(this.webSite);
+        }
+
+        if (gMetricsOnWebsiteStarted) {
+            gMetricsOnWebsiteStarted();
         }
     }
 
