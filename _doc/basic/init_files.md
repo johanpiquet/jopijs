@@ -54,7 +54,7 @@ export default async function(webSite: JopiEasyWebSite) {
 }
 ```
 
-Each module can also have a `uiInit.ts` file. It is called each time the server renders a React page (corresponding to an `index.page.ts` file). It is also executed in the browser on each load. Therefore it runs multiple times on the server side, and only once on the browser side.
+Each module can also have a `uiInit.ts` file. It is called each time the server renders a React page (corresponding to an `page.tsx` file). It is also executed in the browser on each load. Therefore it runs multiple times on the server side, and only once on the browser side.
 
 **Example uiInit.tsx file**
 ```typescript
