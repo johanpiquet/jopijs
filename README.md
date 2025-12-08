@@ -2,23 +2,36 @@
 
 Jopi is a Bun.js framework, with Node.js compatibility, for building ultra-fast websites using React.js.
 
-Its operating principle is very similar to Next.js:
-* On the server side, React.js is used to generate the HTML of pages, which are search-engine friendly (Google, Bing, ...). On the browser side, the generated HTML is automatically replaced by its fully interactive equivalent.
-* Pages and APIs (GET/POST/...) are defined by placing files in directories whose names correspond directly to the URL structure.
+Its operating principle is very similar to Next.js, with a file based router, and React Server Side Rendering.
 
-The goal of Jopi is simplicity: to be able to create an application without drowning in technical details. That's why Jopi is not just a server, but also a framework. It is minimalist, but with very useful additions:
+**The goal of Jopi is simplicity, and making big website easier to maintain. This thank to a powerful module system.**
+
+> This module is make website refactoring much more easier, since it allows you to alter the website without touching the current code :
+you create a new module, which override some existing routes and React components. Once this module disabled (by adding a simple underscore in front of his name), then you immediatly revert to your old version.
+
+Here are some of Jopi features:
 
 * **Tailwind already configured and enabled**. As well as **React HMR integration** so that any UI code change is instantly reflected in the browser.
 * Inclusion of a **Docker script** to quickly convert your project into a very lightweight Docker VM.
 * Built-in **JWT authentication** with the ability to easily create a user directory: a minimalist system that is easy to understand and extend for your own needs.
 * **User role-based security** is included. It allows limiting access to certain resources and customizing behavior according to user roles.
-* A **cache system** that makes your site as fast as a static site. You have full control over this cache, which can be global, per-user, distinguish desktop/mobile, ...
-* Creating an SSL certificate (for https) is trivial: Jopi **generates development certificates** (local machine) and also handles **Let's Encrypt**: with automatic renewal and no connection loss.
-* Simple but powerful **module system** to organize your application and reuse module between your apps.
+* Simple but powerful **module system** :
+  * Allow sharing React components.
+  * Allows a module to override a shared component.
+  * Allows modules to communicate with each other (event/listeners pattern).
+  * Allows modules to extend a toolbar-like component.
+  * Modules to override an existing route.
+
 
 ## Cookbook
 
 The documentation is organized as a cookbook: you want to do this, here is how.
+
+I do regular update this cookbook with new features.  
+You can also visit the YouTube page for video tutorials [link](https://www.youtube.com/@jopijs)
+
+> Don't forget to like the videos, it helps a lot !  
+> Also give GitHub stars if you like this project !
 
 ### Basics
 
