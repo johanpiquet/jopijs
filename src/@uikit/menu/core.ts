@@ -24,13 +24,12 @@ class MenuTreeBuilder {
             root.items.sort((a, b) => {
                 const priorityA = a.priority || 0;
                 const priorityB = b.priority || 0;
-                return priorityA - priorityB;
+                return priorityB - priorityA;
             });
 
             for (let item of root.items) {
                 doSort(item);
             }
-
         }
 
         doSort(this.root);
