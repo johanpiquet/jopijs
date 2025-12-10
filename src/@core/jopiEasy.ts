@@ -11,7 +11,7 @@ import type {Config as TailwindConfig} from 'tailwindcss';
 import {type FetchOptions, type ServerDownResult, ServerFetch, type ServerFetchOptions} from "./serverFetch.ts";
 import {getLetsEncryptCertificate, type LetsEncryptParams, type OnTimeoutError} from "./letsEncrypt.ts";
 import {type UserInfos_WithLoginPassword, UserStore_WithLoginPassword} from "./userStores.ts";
-import {getBundlerConfig, type PostCssInitializer} from "./bundler/config.ts";
+import {getBundlerConfig, type PostCssInitializer} from "./bundler/index.ts";
 import {getInMemoryCache, initMemoryCache, type InMemoryCacheOptions} from "./caches/InMemoryCache.ts";
 import {SimpleFileCache} from "./caches/SimpleFileCache.ts";
 import {
@@ -442,7 +442,7 @@ export class JopiEasyWebSite {
 
             this.webSite = new WebSiteImpl(this.origin, this.options);
 
-            for (const hook of  this.afterHook) {
+            for (const hook of this.afterHook) {
                 try {
                     await hook(this.webSite!);
                 }

@@ -1,5 +1,4 @@
-import type {BundlerConfig, CreateBundleParams} from "jopijs";
-import * as jk_app from "jopi-toolkit/jk_app";
+import {getGlobalCssFileContent, type CreateBundleParams} from "jopijs";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -79,61 +78,6 @@ async function applyPostCss(params: CreateBundleParams, sourceFiles: string[]): 
     }
     catch (e: any) {
         console.error("Error while compiling for Tailwind:", e);
-        return undefined;
-    }
-}
-
-export async function getGlobalCssFileContent(config: BundlerConfig): Promise<string> {
-    if (config.tailwind.globalCssContent) {
-        return config.tailwind.globalCssContent;
-    }
-
-    if (config.tailwind.globalCssFilePath) {
-        if (!await jk_fs.isFile(config.tailwind.globalCssFilePath)) {
-            throw new Error(`Tailwind - File not found where resolving 'global.css': ${config.tailwind.globalCssFilePath}`);
-        }
-
-        return jk_fs.readTextFromFile(config.tailwind.globalCssFilePath);
-    }
-
-    let found = await getTailwindTemplateFromShadCnConfig();
-    if (found) return found;
-
-    let rootDir = jk_fs.dirname(jk_app.findPackageJson());
-
-    if (await jk_fs.isFile(jk_fs.join(rootDir, "global.css"))) {
-        return jk_fs.readTextFromFile(jk_fs.join(rootDir, "global.css"));
-    }
-
-    return `@import "tailwindcss";`;
-}
-
-/**
- * Get Tailwind template CSS file from Shadcn config file (components.json).
- * See: https://ui.shadcn.com/docs/components-json
- */
-async function getTailwindTemplateFromShadCnConfig() {
-    const pkgJsonPath = jk_app.findPackageJson();
-    if (!pkgJsonPath) return undefined;
-
-    let filePath = path.join(path.dirname(pkgJsonPath), "components.json");
-    if (!await jk_fs.isFile(filePath)) return undefined;
-
-    try {
-        let asText = jk_fs.readTextFromFileSync(filePath);
-        let asJSON = JSON.parse(asText);
-
-        let tailwindConfig = asJSON.tailwind;
-        if (!tailwindConfig) return undefined;
-
-        let tailwindCssTemplate = tailwindConfig.css;
-        if (!tailwindCssTemplate) return undefined;
-
-        let fullPath = path.resolve(path.dirname(pkgJsonPath), tailwindCssTemplate);
-        return jk_fs.readTextFromFileSync(fullPath);
-    }
-    catch (e) {
-        console.error("Error reading Shadcn config file:", e);
         return undefined;
     }
 }

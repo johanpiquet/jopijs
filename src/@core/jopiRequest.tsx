@@ -29,7 +29,7 @@ import {parseCookies} from "./internalTools.ts";
 import * as jk_term from "jopi-toolkit/jk_term";
 import {isNodeJS} from "jopi-toolkit/jk_what";
 import {isSinglePageMode} from "jopijs/loader-client";
-import {createBundleForPage} from "./bundler/bundler.ts";
+import {createBundleForPage} from "./bundler/index.ts";
 import {type BrowserCacheValidationInfos, type ReqReturnFileParams} from "./browserCacheControl.ts";
 import {WebSiteMirrorCache} from "./caches/webSiteMirrorCache.ts";
 

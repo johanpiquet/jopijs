@@ -3,8 +3,8 @@ import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_crypto from "jopi-toolkit/jk_crypto";
 import {getBrowserInstallScript} from "jopijs/linker";
 import {getBrowserRefreshScript, isBrowserRefreshEnabled, isSinglePageMode, isReactHMR} from "jopijs/loader-client";
-import {getGlobalCssFileContent} from "jopijs/bundler";
-import type {CreateBundleParams} from "./bundler.ts";
+import {getGlobalCssFileContent} from "./index.ts";
+import type {CreateBundleParams} from "./index.ts";
 
 // *********************************************************************************************************************
 // The goal of this file is to generate the individual pages required for each page found in the root (page.tsx).

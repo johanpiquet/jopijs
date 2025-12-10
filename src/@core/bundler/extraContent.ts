@@ -1,4 +1,4 @@
-import {addVirtualUrlEntry, type VirtualUrlEntry} from "jopijs/loader-tools";
+import {type VirtualUrlEntry} from "jopijs/loader-tools";
 import * as jk_events from "jopi-toolkit/jk_events";
 
 /**

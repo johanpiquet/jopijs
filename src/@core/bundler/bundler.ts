@@ -1,12 +1,11 @@
 import {WebSiteImpl} from "../jopiWebSite.tsx";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_events from "jopi-toolkit/jk_events";
-import {getBundleDirPath} from "./common.ts";
+import {getBundleDirPath} from "./config.ts";
 import {type BundlerConfig, getBundlerConfig} from "./config.ts";
 import {getExtraCssToBundle} from "./extraContent.ts";
 import {configureServer} from "./server.ts";
 import {getVirtualUrlMap, type VirtualUrlEntry} from "jopijs/loader-tools";
-import "./pagesGenerator.ts";
 import {isSinglePageMode} from "jopijs/loader-client";
 import {logBundler} from "../_logs.ts";
 

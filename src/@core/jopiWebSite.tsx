@@ -21,8 +21,8 @@ import {VoidPageCache} from "./caches/cache.ts";
 import {ONE_DAY} from "./publicTools.ts";
 
 import {getInMemoryCache} from "./caches/InMemoryCache.ts";
-import {installBundleServer} from "./bundler/server.ts";
-import {createBundle} from "./bundler/bundler.ts";
+import {installBundleServer} from "./bundler/index.ts";
+import {createBundle} from "./bundler/index.ts";
 import * as jk_webSocket from "jopi-toolkit/jk_webSocket";
 import type {EventGroup} from "jopi-toolkit/jk_events";
 import * as jk_events from "jopi-toolkit/jk_events";

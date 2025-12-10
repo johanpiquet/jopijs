@@ -3,11 +3,12 @@
 import path from "node:path";
 
 import fs from "node:fs/promises";
-import {ServerAlreadyStartedError, type SslCertificatePath, type WebSite, WebSiteImpl} from "./jopiWebSite.tsx";
+import { ServerAlreadyStartedError, type SslCertificatePath, type WebSite, WebSiteImpl } from "./jopiWebSite.tsx";
 
 import * as jk_app from "jopi-toolkit/jk_app";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_os from "jopi-toolkit/jk_os";
+import * as jk_tools from "jopi-toolkit/jk_tools";
 
 class JopiServer {
     private webSite?: WebSiteImpl;
@@ -28,14 +29,14 @@ class JopiServer {
             let mkCertToolPath = jk_os.whichSync("mkcert");
 
             if (mkCertToolPath) {
-                await fs.mkdir(sslDirPath, {recursive: true});
+                await fs.mkdir(sslDirPath, { recursive: true });
                 await jk_os.exec(`cd ${sslDirPath}; ${mkCertToolPath} -install; ${mkCertToolPath} --cert-file certificate.crt.key --key-file certificate.key ${hostName} localhost 127.0.0.1 ::1`);
             } else {
                 throw "Can't generate certificate, mkcert tool not found. See here for installation: https://github.com/FiloSottile/mkcert";
             }
         }
 
-        return {key: keyFilePath, cert: certFilePath};
+        return { key: keyFilePath, cert: certFilePath };
     }
 
     setWebsite(webSite: WebSite): WebSite {
@@ -91,6 +92,8 @@ class JopiServer {
 
         await webSite.onBeforeServerStart();
 
+        await jk_tools.killPort(String(webSite.port));
+
         this.server = await webSite.serverInstanceBuilder.startServer({
             port: webSite.port,
             tls: selectCertificate(certificates)
@@ -132,9 +135,9 @@ export interface StartServerOptions extends StartServerCoreOptions {
     /**
      * The TLS certificate to use (for https).
      */
-    tls?: TlsCertificate|TlsCertificate[],
+    tls?: TlsCertificate | TlsCertificate[],
 
-    fetch: (req: Request) => Response|Promise<Response|undefined>|undefined;
+    fetch: (req: Request) => Response | Promise<Response | undefined> | undefined;
 
     onWebSocketConnection?: (ws: WebSocket, infos: WebSocketConnectionInfos) => void;
 }
@@ -154,7 +157,7 @@ export interface TlsCertificate {
  * Allows accessing to the core node.js / bun.js server.
  */
 export interface CoreServer {
-    requestIP(req: Request): ServerSocketAddress|null;
+    requestIP(req: Request): ServerSocketAddress | null;
     timeout(req: Request, seconds: number): void;
     stop(closeActiveConnections: boolean): Promise<void>;
 }
@@ -184,5 +187,5 @@ export interface SseEventController {
     close(): void;
 }
 
-let gServerInstance: JopiServer|undefined;
+let gServerInstance: JopiServer | undefined;
 const gServerStartGlobalOptions: StartServerCoreOptions = {};
