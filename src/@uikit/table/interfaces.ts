@@ -94,11 +94,28 @@ export interface JFilterRendererParams {
 
 //endregion
 
+//region Loading data
+
+export interface JDataProviderResponse {
+    rows: any[];
+    total?: number;
+    offset?: number;
+}
+
+export interface JDataProviderParams {
+    offset: number;
+    count: number;
+}
+
+export type JDataProvider = (params: JDataProviderParams) => Promise<JDataProviderResponse>;
+
+//endregion
+
 //region JTable
 
 export interface JTableParams {
     variants: JTableVariants;
-    data: any[];
+    data: any[] | JDataProvider;
     schema: jk_schema.Schema;
     children?: React.ReactNode;
     showColumnsSelector?: boolean;
@@ -109,6 +126,11 @@ export interface JTableParams {
 
     enableEditing?: boolean;
     canSelectColumns?: boolean;
+
+    /**
+     * The maximum number of row to show.
+     */
+    pageSize?: number;
 
     /**
      * The default currency to use (USD, EURO, ...).
@@ -148,29 +170,31 @@ export interface JTableVariants {
      */
     actionRowWidth?: number;
 
-    wrapCellValue: (params: JCellRendererParams) => JValueRenderer;
-
     createActionCell: (actions: JActionsProvider) => JCellRenderer;
-
     selectRowsHeaderRenderer: () => JHeaderRenderer|string;
     selectRowsCellRenderer: () => JCellRenderer;
 
-    columnHeaderRenderer: (params: JColumnHeaderRendererParams) => JHeaderRenderer|string;
-    cellRenderer: (params: JCellRendererParams) => JCellRenderer;
+    // Cell rendering
     //
+    wrapCellValue: (params: JCellRendererParams) => JValueRenderer;
+    cellRenderer: (params: JCellRendererParams) => JCellRenderer;
     cellRenderer_currency?: (params: JCellRendererParams) => JCellRenderer;
     cellRenderer_percent?: (params: JCellRendererParams) => JCellRenderer;
     cellRenderer_decimal?: (params: JCellRendererParams) => JCellRenderer;
     cellRenderer_number?: (params: JCellRendererParams) => JCellRenderer;
+    //
+    columnHeaderRenderer: (params: JColumnHeaderRendererParams) => JHeaderRenderer|string;
 
     tableRenderer: (params: JTableRenderParams) => React.ReactElement;
+    layoutRenderer: (items: JTableLayoutItems) => React.ReactNode;
 
+    // UI Components
+    //
     statisticsRenderer: (params: JStatisticsRendererParams) => React.ReactNode;
     pageSelectorRenderer: (params: JPageSelectorRendererParams) => React.ReactNode;
     columnsSelectorRenderer: (params: JColumnSelectorRendererParams) => React.ReactNode;
     filterRenderer: (params: JFilterRendererParams) => React.ReactNode;
-
-    layoutRenderer: (items: JTableLayoutItems) => React.ReactNode;
+    loadingScreenRenderer: () => React.ReactNode;
 
     [renderer: string]: any;
 }

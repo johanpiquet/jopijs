@@ -1,17 +1,18 @@
 import {
     type ColumnFiltersState, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel,
-    type SortingState, useReactTable, type VisibilityState, type ColumnDef
+    type SortingState, useReactTable, type VisibilityState, type ColumnDef, type PaginationState
 } from "@tanstack/react-table";
 
 import * as React from "react";
 import * as jk_schema from "jopi-toolkit/jk_schema";
 import type {
     JCellRenderer, JCellRendererParams, JCellRendererProvider, JColumnHeaderRendererParams,
-    JCreateColumnsParams,
+    JCreateColumnsParams, JDataProvider,
     JFieldRenderingRules,
     JFieldWithRenderer,
     JTableParams
 } from "./interfaces.ts";
+import {useEffect, useState} from "react";
 
 function getNormalizedScheme(params: JCreateColumnsParams): Record<string, JFieldWithRenderer> {
     function merge(baseRules: jk_schema.ScOnTableRenderingInfo|undefined, newRules: JFieldRenderingRules) {
@@ -174,19 +175,34 @@ export function JTable(p: JTableParams) {
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
     const [rowSelection, setRowSelection] = React.useState({});
 
+    const [visibleRows, setVisibleRows] = useState<any[]>([]);
+    const [allRows, setAllRows] = useState<any[]>([]);
+    const [myRowCount, setMyRowCount] = useState(0);
+
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(() => calcColumnsVisibility(p));
     const [columns] = React.useState(() => createColumns(p));
+    const [isLoadingData, setIsLoadingData] = useState(false);
+    const [pagination, setPagination] = useState<PaginationState>({pageIndex: 0, pageSize: p.pageSize || 20});
+
+    const manualPagination = !(p.data instanceof Array);
 
     const tTable = useReactTable({
-        data: p.data,
-        columns: columns,
+        //debugTable: true,
 
         state: {
             sorting,
             columnFilters,
             columnVisibility,
             rowSelection,
+            pagination
         },
+
+        data: manualPagination ? visibleRows : (p.data as any[]),
+        rowCount: manualPagination ? myRowCount : undefined,
+        manualPagination: manualPagination ? true : undefined,
+
+        columns: columns,
+        onPaginationChange: setPagination,
 
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
@@ -198,8 +214,59 @@ export function JTable(p: JTableParams) {
         onRowSelectionChange: setRowSelection
     });
 
+    const LoadingScreen = p.variants.loadingScreenRenderer;
+
+    useEffect(() => {
+        if (manualPagination) {
+            async function loadData(provider: JDataProvider) {
+                const pageSize = pagination.pageSize;
+                const pageIndex = pagination.pageIndex;
+
+                // What we want to load.
+                let maxOffset = ((pageIndex * pageSize) + pageSize);
+                let newAllRows = allRows;
+
+                // Need loading some data?
+                //
+                if (allRows.length < maxOffset) {
+                    // Force showing the loading screen.
+                    setVisibleRows([]);
+
+                    // Load what we need, without gaps.
+                    //
+                    let offset = allRows.length;
+                    let res = await provider({offset, count: maxOffset - offset});
+
+                    // allRows contains all the rows.
+                    newAllRows = allRows.concat(res.rows);
+                    setAllRows(newAllRows);
+
+                    // Update the total rows count if the returned information is not the same.
+                    if ((res.total!==undefined) && (res.total!==myRowCount)) setMyRowCount(res.total);
+                }
+
+                // Update the visible rows.
+                //
+                let offset = pageIndex * pageSize;
+                let newVisibleRows = newAllRows.slice(pageIndex * pageSize, offset+pageSize);
+                setVisibleRows(newVisibleRows);
+            }
+
+            (async () => {
+                try {
+                    setIsLoadingData(true);
+                    await loadData(p.data as JDataProvider);
+                } finally {
+                    setIsLoadingData(false);
+                }
+            })();
+        }
+    }, [p.data, pagination]);
+
+    const children = isLoadingData ? <LoadingScreen /> : p.children;
+
     return p.variants.layoutRenderer({
-        table: p.variants.tableRenderer({table: tTable, ifNoContent: p.children}),
+        table: p.variants.tableRenderer({table: tTable, ifNoContent: children}),
 
         filter: (p.showFilter!==false) && p.variants.filterRenderer({
             table: tTable,
