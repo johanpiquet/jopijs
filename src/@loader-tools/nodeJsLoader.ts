@@ -2,10 +2,12 @@ import type { ResolveHook, ResolveFnOutput } from 'node:module';
 import nodeModule from 'node:module';
 
 import {pathToFileURL} from "node:url";
-import * as jk_app from "jopi-toolkit/jk_app";
 import {getPathAliasInfo, type PathAliasInfo} from "./tools.js";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+import * as jk_app from "jopi-toolkit/jk_app";
+import * as jk_fs from "jopi-toolkit/jk_fs";
 
 //**********************************************************************************************************************
 // NodeJS RESOLVER vs LOADER
@@ -28,7 +30,7 @@ let gRequire: NodeJS.Require|undefined;
  *      The alias definitions are taken in the paths section of tsconfig.json.
  *
  * 2- Resolving import for an exposed file inside a module
- *      Exemple:                import 'primereact/sidebar'
+ *      Example:                import 'primereact/sidebar'
  *      where the target is     import 'primereact/sidebar/index.mjs.js'
  */
 export const resolveNodeJsAlias: ResolveHook = async (specifier, context, nextResolve): Promise<ResolveFnOutput> => {
@@ -58,7 +60,21 @@ export const resolveNodeJsAlias: ResolveHook = async (specifier, context, nextRe
             let filePath = resolvedPath.endsWith('.js') ? resolvedPath : `${resolvedPath}.js`;
             filePath = jk_app.getCompiledFilePathFor(filePath);
 
-            return nextResolve(pathToFileURL(filePath).href, context);
+            if (await jk_fs.isFile(filePath)) {
+                return nextResolve(pathToFileURL(filePath).href, context);
+            }
+
+            // Remove .js
+            filePath = filePath.slice(0, -3);
+
+            // Test path/index.js
+            filePath = jk_fs.join(filePath, "index.js");
+
+            if (await jk_fs.isFile(filePath)) {
+                return nextResolve(pathToFileURL(filePath).href, context);
+            }
+
+            throw new Error(`Can't resolve alias target ${specifier}`);
         }
 
         // > Will continue on next cases.
