@@ -138,12 +138,16 @@ export interface JFormMessageProps {
     fieldErrorMessage?: UiText|false;
 }
 
-export interface JInputFormFieldProps extends JFieldProps {
+export interface JTextFormFieldProps extends JFieldProps {
+}
+
+export interface JNumberFormFieldProps extends JFieldProps {
 }
 
 export interface JCheckboxFormFieldProps extends JFieldProps {
     defaultChecked?: boolean;
 }
+
 export interface JFileSelectFieldProps extends JFieldProps {
 }
 
@@ -153,7 +157,20 @@ export interface JNumberFormFieldProps extends JFieldProps {
     incrStep?: number;
 }
 
-export interface JAutoFormFieldProps extends JInputFormFieldProps, JCheckboxFormFieldProps, JNumberFormFieldProps {
+export interface JAutoFormFieldProps extends
+    JTextFormFieldProps,
+    JNumberFormFieldProps,
+    JFileSelectFieldProps,
+    JCheckboxFormFieldProps {
 }
 
 //endregion
+
+export interface JFormVariants {
+    FormMessage(p: JFormMessageProps): React.ReactElement|null;
+
+    TextFormField(p: JTextFormFieldProps): React.ReactElement;
+    CheckboxFormField(p: JCheckboxFormFieldProps): React.ReactElement;
+    NumberFormField(p: JNumberFormFieldProps): React.ReactElement;
+    FileSelectField(p: JFileSelectFieldProps): React.ReactElement;
+}

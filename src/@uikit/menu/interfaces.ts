@@ -23,3 +23,7 @@ export interface ReactMenuItem {
 
     [key: string]: any;
 }
+
+export interface MenuTree extends ReactMenuItem {
+    items?: MenuTree[];
+}

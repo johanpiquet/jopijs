@@ -1,12 +1,8 @@
 import * as jk_events from "jopi-toolkit/jk_events";
 
 import React from "react";
-import {ucFirst} from "../helpers/tools.ts";
-import type {ReactMenuItem} from "./interfaces.ts";
-
-interface MenuTree extends ReactMenuItem {
-    items?: MenuTree[];
-}
+import {ucFirst} from "../helpers/index.ts";
+import type {MenuTree} from "./interfaces.ts";
 
 class MenuTreeBuilder {
     constructor(
