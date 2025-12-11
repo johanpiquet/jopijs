@@ -142,11 +142,27 @@ async function generateAll() {
 }
 
 interface WriteCodeFileParams {
+    /**
+     * The path into the directory _jopiLinkerGen
+     */
     fileInnerPath: string;
+
+    /**
+     * What to write into this file.
+     * Here it's: src/_jopiLinkerGen/fileInnerPath
+     */
     srcFileContent: string;
+
+    /**
+     * What to write into this file.
+     * Here it's: dist/_jopiLinkerGen/fileInnerPath
+     */
     distFileContent: string;
+
+    /**
+     * The content of the .d.ts file.
+     */
     declarationFile?: string;
-    useTypescriptForSource?: boolean;
 }
 
 export class CodeGenWriter {
@@ -175,25 +191,17 @@ export class CodeGenWriter {
     async writeCodeFile(params: WriteCodeFileParams) {
         // The file must:
         // - Be a JavaScript file.
-        // - Be written into ./src/_jopiLinkerGen  (for alias resolve)
-        // - Be written into ./dst/_jopiLinkerGen  (for node.js TypeScript to js compilation)
+        // - Be written into ./src/_jopiLinkerGen
+        // - Be written into ./dst/_jopiLinkerGen  (only with Node.js)
 
-        const ext = params.useTypescriptForSource ? ".ts" : ".js";
-
-        await writeTextToFileIfMismatch(jk_fs.join(gDir_outputSrc, params.fileInnerPath + ext), params.srcFileContent);
+        await writeTextToFileIfMismatch(jk_fs.join(gDir_outputSrc, params.fileInnerPath + ".ts"), params.srcFileContent);
 
         if (!gIsTypeScriptOnly) {
             await writeTextToFileIfMismatch(jk_fs.join(gDir_outputDst, params.fileInnerPath + ".js"), params.distFileContent);
         }
 
-        if (params.declarationFile) {
-            if (!params.useTypescriptForSource) {
-                await writeTextToFileIfMismatch(jk_fs.join(gDir_outputSrc, params.fileInnerPath + ".d.ts"), params.declarationFile);
-            }
-
-            if (!gIsTypeScriptOnly) {
-                await writeTextToFileIfMismatch(jk_fs.join(gDir_outputDst, params.fileInnerPath + ".d.ts"), params.declarationFile);
-            }
+        if (!gIsTypeScriptOnly && params.declarationFile) {
+            await writeTextToFileIfMismatch(jk_fs.join(gDir_outputDst, params.fileInnerPath + ".d.ts"), params.declarationFile);
         }
     }
 

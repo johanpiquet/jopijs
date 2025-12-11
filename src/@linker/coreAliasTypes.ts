@@ -219,8 +219,7 @@ export class TypeList extends AliasType {
             fileInnerPath: jk_fs.join(outDir_innerPath, fileName),
             declarationFile: this.codeGen_createDeclarationTypes(),
             srcFileContent: srcCode,
-            distFileContent: distCode,
-            useTypescriptForSource: true
+            distFileContent: distCode
         });
     }
 
@@ -319,8 +318,7 @@ export class TypeChunk extends AliasType {
         await writer.writeCodeFile({
             fileInnerPath: jk_fs.join(this.getGenOutputDir(item), targetName),
             srcFileContent: srcCode,
-            distFileContent: distCode,
-            useTypescriptForSource: true
+            distFileContent: distCode
         });
     }
 

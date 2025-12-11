@@ -32,6 +32,7 @@ import {getNewServerInstanceBuilder, type ServerInstanceBuilder} from "./serverI
 import {PriorityLevel, sortByPriority, type ValueWithPriority} from "jopi-toolkit/jk_tools";
 import {logCache_notInCache, logServer_request} from "./_logs.ts";
 import type {TryReturnFileParams} from "./browserCacheControl.ts";
+import {installDataSourcesServer} from "./dataSources.ts";
 
 export type RouteHandler = (req: JopiRequest) => Promise<Response>;
 
@@ -274,6 +275,7 @@ export class WebSiteImpl implements WebSite {
         await jk_events.sendAsyncEvent("@jopi.server.before.start", {webSite: this});
         await createBundle(this);
         installBundleServer(this);
+        installDataSourcesServer(this);
 
         if (isBrowserRefreshEnabled()) {
             // To known: there is a bug with some Chrome version
