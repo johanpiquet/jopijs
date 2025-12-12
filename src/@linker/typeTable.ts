@@ -151,6 +151,10 @@ export default C;`;
                 throw this.declareError("Is not a valide data source.", dsItem.entryPoint);
             }
 
+            if (dsImpl.name!==dsName) {
+                throw this.declareError(`The datasource name must be "${dsName}". Found "${dsImpl.name}"`, dsItem.entryPoint);
+            }
+
             let schema = dsImpl.schema;
             if (!schema) throw this.declareError("Is not a valide data source. Missing schema.", dsItem.entryPoint);
 
