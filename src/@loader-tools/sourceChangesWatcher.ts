@@ -26,9 +26,7 @@ export class SourceChangesWatcher {
 
     private _areSignalCatch = false;
 
-    private restarting = false;
     private _isStarted = false;
-
     private _enableLogs: boolean = false;
 
     private readonly watchDirs: string[];
@@ -38,7 +36,7 @@ export class SourceChangesWatcher {
     private readonly _cmd: string;
     private readonly _args: string[];
 
-    private _timerId: number = 0;
+    private _avoidRestartTimerId: number = 0;
     private readonly _isDev: boolean;
     private readonly _mustLog: boolean;
 
@@ -70,10 +68,33 @@ export class SourceChangesWatcher {
         }
 
         // Create the first child.
-        await this.spawnChild(true);
+        await this.spawnChild();
     }
 
-    private async askToRestart(filePath: string) {
+    /**
+     * We wait about 2 seconds after the spawned process start.
+     * This allows avoiding restart when the linker makes changes.
+     */
+    waitBeforeWatchingFile() {
+        this._canWatchFiles = false;
+
+        // Wait a delay to avoid restarting
+        // when Jopi linker updates the code.
+        //
+        setTimeout(() => {
+            if (this._enableLogs) {
+                console.log("🔥  Starting file watching...");
+            }
+
+            this._canWatchFiles = true;
+        }, 3000);
+    }
+
+    _canWatchFiles = false;
+
+    private async onFileChangeDetected(filePath: string) {
+        if (!this._canWatchFiles) return;
+
         if (this.excludeDir) {
             let isExcluded = this.excludeDir.find(p => filePath.startsWith(p))
             if (isExcluded) return;
@@ -88,28 +109,21 @@ export class SourceChangesWatcher {
         let nodeModule = pathParts.find(e => e === 'node_modules');
         if (nodeModule) return;
 
-        // Allow avoiding restart until stability is found.
-        if (this._timerId) {
-            return;
-        }
+        // A restart is already scheduled?
+        // Then avoid starting a new one.
+        //
+        if (this._avoidRestartTimerId) return;
 
         // @ts-ignore
-        this._timerId = setTimeout(async () => {
-            this._timerId = 0;
-
-            if (this.restarting) return;
-            this.restarting = true;
-
-            //console.clear();
-
-            if (this._enableLogs) {
-                console.log("File change watcher - RESTART for:", filePath);
-            }
-
+        this._avoidRestartTimerId = setTimeout(async () => {
             try {
+                if (this._enableLogs) {
+                    console.log("File change watcher - RESTART for:", filePath);
+                }
+
                 await this.spawnChild();
             } finally {
-                this.restarting = false;
+                this._avoidRestartTimerId = 0;
             }
         }, this._restartDelay);
     }
@@ -132,7 +146,7 @@ export class SourceChangesWatcher {
         });
 
         watcher.on('all', async (_event, paths) => {
-            await this.askToRestart(paths)
+            await this.onFileChangeDetected(paths)
         });
 
         watcher.on('error', () => { /* swallow watcher errors to keep running */
@@ -159,7 +173,7 @@ export class SourceChangesWatcher {
         }
     }
 
-    public async spawnChild(ignoreSpawnEvent = false) {
+    public async spawnChild() {
         if (gChild) {
             if (!gChild.killed) {
                 // Do a hard kill.
@@ -182,9 +196,8 @@ export class SourceChangesWatcher {
             process.on('exit', () => this.killAll());
         }
 
-        if (this._mustLog) {
-            console.log("spawning", {cmd: this._cmd, args: this._args, cwd: process.cwd(), useShell})
-        }
+        //console.log("spawning", {cmd: this._cmd, args: this._args, cwd: process.cwd(), useShell})
+        this._canWatchFiles = false;
 
         const child = spawn(this._cmd, this._args, {
             stdio: "inherit", shell: useShell,
@@ -210,15 +223,16 @@ export class SourceChangesWatcher {
             }
         });
 
-        if (!ignoreSpawnEvent) {
-            child.on("spawn", () => {
-                this.onSpawned();
-            });
-        }
+        child.on("spawn", () => {
+            this.onSpawned();
+        });
     }
 
     onSpawned() {
-        // To override.
+        // Allow not watching the files changes
+        // before 2sec after the process start.
+        //
+        this.waitBeforeWatchingFile();
     }
 }
 
