@@ -62,6 +62,53 @@ export async function writeTextToFileIfMismatch(filePath: string, content: strin
     await jk_fs.writeTextToFile(filePath, content);
 }
 
+export function priorityNameToLevel(priorityName: string): PriorityLevel|undefined {
+    priorityName = priorityName.toLowerCase();
+    priorityName = priorityName.replace("-", "");
+    priorityName = priorityName.replace("_", "");
+
+    switch (priorityName) {
+        case "default":
+            return PriorityLevel.default;
+        case "veryhigh":
+            return PriorityLevel.veryHigh;
+        case "high":
+            return PriorityLevel.high;
+        case "low":
+            return PriorityLevel.low;
+        case "verylow":
+            return PriorityLevel.veryLow;
+    }
+
+    return undefined;
+}
+
+export async function decodePriority(priorityName: string, itemFullPath: string): Promise<PriorityLevel> {
+    priorityName = priorityName.toLowerCase();
+    priorityName = priorityName.replace("-", "");
+    priorityName = priorityName.replace("_", "");
+
+    switch (priorityName) {
+        case "default.priority":
+            await useCanonicalFileName(itemFullPath, priorityName)
+            return PriorityLevel.default;
+        case "veryhigh.priority":
+            await useCanonicalFileName(itemFullPath, "very_high.priority")
+            return PriorityLevel.veryHigh;
+        case "high.priority":
+            await useCanonicalFileName(itemFullPath, priorityName)
+            return PriorityLevel.high;
+        case "low.priority":
+            await useCanonicalFileName(itemFullPath, priorityName)
+            return PriorityLevel.low;
+        case "verylow.priority":
+            await useCanonicalFileName(itemFullPath, "very_low.priority")
+            return PriorityLevel.veryLow;
+    }
+
+    throw declareLinkerError("Unknown priority name: " + jk_fs.basename(itemFullPath, ".priority"), itemFullPath);
+}
+
 //endregion
 
 //region Registry
@@ -249,11 +296,11 @@ __BODY__FOOTER
 //region Processing project
 
 async function processProject() {
-    await processModules();
+    await processAllModules();
     await generateAll();
 }
 
-async function processModules() {
+async function processAllModules() {
     let modules = await jk_fs.listDir(gDir_ProjectSrc);
 
     for (let module of modules) {
@@ -262,10 +309,9 @@ async function processModules() {
 
         for (let p of gModuleDirProcessors) {
             await p.onBeginModuleProcessing(gCodeGenWriter, module.fullPath);
-            await jk_events.sendAsyncEvent("@jopi.linker.onModule", { codeWrite: gCodeGenWriter, moduleDir: module.fullPath});
         }
 
-        await processModule(module.fullPath);
+        await processThisModule(module.fullPath);
 
         for (let p of gModuleDirProcessors) {
             await p.onEndModuleProcessing(gCodeGenWriter, module.fullPath);
@@ -273,7 +319,7 @@ async function processModules() {
     }
 }
 
-async function processModule(moduleDir: string) {
+async function processThisModule(moduleDir: string) {
     let dirItems = await jk_fs.listDir(moduleDir);
     let aliasRootDir: jk_fs.DirItem|undefined;
 
@@ -312,10 +358,9 @@ async function processModule(moduleDir: string) {
 
 export abstract class AliasType {
     constructor(public readonly typeName: string, public readonly position?: "root"|undefined) {
-        this.initialize();
     }
 
-    protected initialize() {
+    public initialize(aliasTypes: Record<string, AliasType>) {
     }
 
     abstract processDir(p: { moduleDir: string; typeDir: string; genDir: string; }): Promise<void>;
@@ -505,32 +550,6 @@ export abstract class AliasType {
             dirItem.fullPath = await useCanonicalFileName(dirItem.fullPath, dirItem.name);
 
             return canonicalName;
-        }
-
-        async function decodePriority(priorityName: string, itemFullPath: string): Promise<PriorityLevel> {
-            priorityName = priorityName.toLowerCase();
-            priorityName = priorityName.replace("-", "");
-            priorityName = priorityName.replace("_", "");
-
-            switch (priorityName) {
-                case "default.priority":
-                    await useCanonicalFileName(itemFullPath, priorityName)
-                    return PriorityLevel.default;
-                case "veryhigh.priority":
-                    await useCanonicalFileName(itemFullPath, "very_high.priority")
-                    return PriorityLevel.veryHigh;
-                case "high.priority":
-                    await useCanonicalFileName(itemFullPath, priorityName)
-                    return PriorityLevel.high;
-                case "low.priority":
-                    await useCanonicalFileName(itemFullPath, priorityName)
-                    return PriorityLevel.low;
-                case "verylow.priority":
-                    await useCanonicalFileName(itemFullPath, "very_low.priority")
-                    return PriorityLevel.veryLow;
-            }
-
-            throw declareLinkerError("Unknown priority name: " + jk_fs.basename(itemFullPath, ".priority"), itemFullPath);
         }
 
         async function checkDirItem(entry: jk_fs.DirItem) {
@@ -893,6 +912,10 @@ export async function compile(importMeta: any, config: LinkerConfig, isRefresh =
         gModuleDirProcessors.push(p);
     }
 
+    for (let aType of config.aliasTypes) {
+        aType.initialize(gTypesHandlers);
+    }
+
     // Avoid deleting the directory if it's a refresh.
     // Why? Because resource can be requested while the
     // refresh is occurring.
@@ -909,7 +932,15 @@ export interface LinkerConfig {
     projectRootDir: string;
     templateForBrowser: string;
     templateForServer: string;
+
+    /**
+     * Processor for an entry into the @alias folder.
+     */
     aliasTypes: AliasType[];
+
+    /**
+     * Processor for the Jopi modules himself.
+     */
     modulesProcess: ModuleDirProcessor[];
 }
 
