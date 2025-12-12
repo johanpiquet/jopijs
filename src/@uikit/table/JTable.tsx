@@ -274,7 +274,7 @@ export function JTable(p: JTableParams) {
                 let offset = myRows.length;
 
                 const callParams = {
-                    offset, count: maxOffset - offset,
+                    page: { pageOffset: offset, pageSize: maxOffset - offset},
                     filter: filter ? {field: p.filterField, value: filter} : undefined,
                     sorting: convertSortingState(sorting)
                 };
