@@ -1,3 +1,5 @@
+// noinspection DuplicatedCode
+
 import {
     type ColumnFiltersState, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel,
     type SortingState, useReactTable, type VisibilityState, type ColumnDef, type PaginationState
@@ -5,6 +7,7 @@ import {
 
 import * as React from "react";
 import * as jk_schema from "jopi-toolkit/jk_schema";
+import * as jk_timer from "jopi-toolkit/jk_timer";
 import type {
     JCellRenderer, JCellRendererParams, JCellRendererProvider, JColumnHeaderRendererParams,
     JCreateColumnsParams,
@@ -12,9 +15,10 @@ import type {
     JFieldWithRenderer,
     JTableParams
 } from "./interfaces.ts";
-import {useEffect, useState} from "react";
+import {useState} from "react";
 
-import {type JFieldSorting} from "jopi-toolkit/jk_data";
+import {type JFieldSorting, type JTableDs_ReadParams} from "jopi-toolkit/jk_data";
+import {useQuery} from '@tanstack/react-query'
 
 function getNormalizedScheme(params: JCreateColumnsParams): Record<string, JFieldWithRenderer> {
     function merge(baseRules: jk_schema.ScOnTableRenderingInfo|undefined, newRules: JFieldRenderingRules) {
@@ -172,6 +176,17 @@ function createColumns<T>(params: JCreateColumnsParams): ColumnDef<T>[] {
     return result;
 }
 
+function convertSortingState(sorting: SortingState): JFieldSorting[]|undefined {
+    if (!sorting.length) return undefined;
+
+    return sorting.map(s => {
+        return {
+            field: s.id,
+            direction: s.desc ? "desc" : "asc"
+        }
+    });
+}
+
 export function JTable(p: JTableParams) {
     p = {...p};
     if (p.dataSource) p.schema = p.dataSource.schema;
@@ -182,19 +197,13 @@ export function JTable(p: JTableParams) {
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
     const [rowSelection, setRowSelection] = React.useState({});
 
-    const [visibleRows, setVisibleRows] = useState<any[]>([]);
-    const [allRows, setAllRows] = useState<any[]>([]);
-    const [totalRowCount, setTotalRowCount] = useState(0);
-
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(() => calcColumnsVisibility(p));
     const [columns] = React.useState(() => createColumns(p));
 
-    const [isLoadingData, setIsLoadingData] = useState(false);
     const [pagination, setPagination] = useState<PaginationState>({pageIndex: 0, pageSize: p.pageSize || 20});
     const [filter, setFilter] = React.useState("");
-    
+
     function doSetFilter(newValue: string) {
-        setAllRows([]);
         setFilter(newValue);
         setPagination({pageIndex: 0, pageSize: pagination.pageSize});
 
@@ -207,8 +216,46 @@ export function JTable(p: JTableParams) {
     
     function doSetSorting(sorting: SortingState) {
         setSorting(sorting);
-        setAllRows([]);
         setPagination({pageIndex: 0, pageSize: pagination.pageSize});
+    }
+
+    let queryData: any = undefined;
+
+    // Data are loading / fetching state
+    //
+    // -- Workflow--
+    // 1- isLoadingData is true
+    // 2- TanStack takes data from the local cache
+    //    --> isLoadingData = false
+    //    + we show the cached data
+    // 3- In the background, TanStack loads data from the server
+    //    --> isRefreshingData = true
+    // 4- Data are loaded from the server
+    //    --> isRefreshingData = true
+    //    + we show the refreshed data
+    //
+    let isLoadingData = false;
+    let isRefreshingData = false;
+
+    if (p.dataSource) {
+        const query = useQuery({
+            queryKey: ["dsTable", p.dataSource!.name, {
+                page: {pageOffset: pagination.pageIndex, pageSize: pagination.pageSize},
+                filter: filter ? {field: p.filterField, value: filter} : undefined,
+                sorting: convertSortingState(sorting)
+            }],
+
+            queryFn: async (ctx) => {
+                let res = await p.dataSource?.read(ctx.queryKey[2] as JTableDs_ReadParams);
+                await jk_timer.sleep(2000)
+                return res;
+            }
+        });
+
+        isLoadingData = query.isLoading === true;
+        isRefreshingData = query.isFetching === true;
+
+        queryData = query.data;
     }
 
     const tTable = useReactTable({
@@ -220,8 +267,8 @@ export function JTable(p: JTableParams) {
             pagination
         },
 
-        data: p.dataSource ? visibleRows : p.data!,
-        rowCount: p.dataSource ? totalRowCount : undefined,
+        data: p.dataSource ? queryData?.rows || [] : p.data!,
+        rowCount: p.dataSource ? queryData?.total : undefined,
         manualPagination: p.dataSource ? true : undefined,
         manualSorting: p.dataSource ? true : undefined,
 
@@ -242,87 +289,24 @@ export function JTable(p: JTableParams) {
         onRowSelectionChange: setRowSelection
     });
 
-    useEffect(() => {
-        if (!p.dataSource) return;
-
-        function convertSortingState(sorting: SortingState): JFieldSorting[]|undefined {
-            if (!sorting.length) return undefined;
-
-            return sorting.map(s => {
-                return {
-                    field: s.id,
-                    direction: s.desc ? "desc" : "asc"
-                }
-            })
-        }
-
-        async function loadData() {
-            const provider = p.dataSource!;
-            const pageSize = pagination.pageSize;
-            let pageIndex = pagination.pageIndex;
-
-            let myRows = allRows;
-
-            // What we want to load.
-            let maxOffset = ((pageIndex * pageSize) + pageSize);
-
-            // Need loading some data?
-            //
-            if (myRows.length < maxOffset) {
-                // Load what we need, without gaps.
-                //
-                let offset = myRows.length;
-
-                const callParams = {
-                    page: { pageOffset: offset, pageSize: maxOffset - offset},
-                    filter: filter ? {field: p.filterField, value: filter} : undefined,
-                    sorting: convertSortingState(sorting)
-                };
-                //
-                let res = await provider.read(callParams);
-
-                myRows = myRows.concat(res.rows);
-
-                // allRows contains all the loaded rows.
-                setAllRows(myRows);
-
-                // Update the total rows count if the returned information is different.
-                if ((res.total!==undefined) && (res.total!==totalRowCount)) setTotalRowCount(res.total);
-            }
-
-            // Update the visible rows.
-            //
-            let offset = pageIndex * pageSize;
-            let newVisibleRows = myRows.slice(pageIndex * pageSize, offset+pageSize);
-            setVisibleRows(newVisibleRows);
-        }
-
-        (async () => {
-            try {
-                setIsLoadingData(true);
-                await loadData();
-            } finally {
-                setIsLoadingData(false);
-            }
-        })();
-    }, [p.dataSource, pagination, sorting, filter]);
-
     return p.variants.layoutRenderer({
-        isLoadingData,
+        isLoadingData: isLoadingData,
+        isRefreshingData: !isLoadingData && isRefreshingData,
+
         variants: p.variants,
 
         table: p.variants.tableRenderer({table: tTable, ifNoContent: p.children}),
 
         filter: (p.showFilter!==false) && p.variants.filterRenderer({
             table: tTable,
-            isLoadingData,
+            isLoadingData: isRefreshingData,
             filterField: p.filterField,
             placeholder: p.filterPlaceholder,
             filter, setFilter: doSetFilter
         }),
 
-        columnsSelector: (p.showColumnsSelector!==false) && p.variants.columnsSelectorRenderer({table: tTable, isLoadingData}),
-        statistics: p.variants.statisticsRenderer({table: tTable, isLoadingData}),
-        pageSelector: p.variants.pageSelectorRenderer({table: tTable, isLoadingData})
+        columnsSelector: (p.showColumnsSelector!==false) && p.variants.columnsSelectorRenderer({table: tTable, isLoadingData: isRefreshingData}),
+        statistics: p.variants.statisticsRenderer({table: tTable, isLoadingData: isRefreshingData}),
+        pageSelector: p.variants.pageSelectorRenderer({table: tTable, isLoadingData: isRefreshingData})
     });
 }

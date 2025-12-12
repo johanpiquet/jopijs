@@ -33,6 +33,11 @@ export interface JTableLayoutItems {
      */
     isLoadingData: boolean;
 
+    /**
+     * Is set to true if the data are refreshing in the background.
+     */
+    isRefreshingData: boolean;
+
     variants: JTableVariants;
 
     table: React.ReactElement;
