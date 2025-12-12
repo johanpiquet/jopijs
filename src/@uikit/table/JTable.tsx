@@ -17,7 +17,7 @@ import type {
 } from "./interfaces.ts";
 import {useState} from "react";
 
-import {type JFieldSorting, type JTableDs_ReadParams} from "jopi-toolkit/jk_data";
+import {type JTableDs_ReadParams} from "jopi-toolkit/jk_data";
 import {useQuery} from '@tanstack/react-query'
 
 function getNormalizedScheme(params: JCreateColumnsParams): Record<string, JFieldWithRenderer> {
@@ -176,17 +176,6 @@ function createColumns<T>(params: JCreateColumnsParams): ColumnDef<T>[] {
     return result;
 }
 
-function convertSortingState(sorting: SortingState): JFieldSorting[]|undefined {
-    if (!sorting.length) return undefined;
-
-    return sorting.map(s => {
-        return {
-            field: s.id,
-            direction: s.desc ? "desc" : "asc"
-        }
-    });
-}
-
 export function JTable(p: JTableParams) {
     p = {...p};
     if (p.dataSource) p.schema = p.dataSource.schema;
@@ -200,14 +189,14 @@ export function JTable(p: JTableParams) {
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(() => calcColumnsVisibility(p));
     const [columns] = React.useState(() => createColumns(p));
 
-    const [pagination, setPagination] = useState<PaginationState>({pageIndex: 0, pageSize: p.pageSize || 20});
+    const [page, setPage] = useState<PaginationState>({pageIndex: 0, pageSize: p.pageSize || 20});
     const [filter, setFilter] = React.useState("");
 
     const [previousQueryData, setPreviousQueryData] = useState<any>(undefined);
 
     function doSetFilter(newValue: string) {
         setFilter(newValue);
-        setPagination({pageIndex: 0, pageSize: pagination.pageSize});
+        setPage({pageIndex: 0, pageSize: page.pageSize});
 
         if (p.filterField) {
             return tTable.getColumn(p.filterField)?.setFilterValue(newValue)
@@ -218,7 +207,7 @@ export function JTable(p: JTableParams) {
     
     function doSetSorting(sorting: SortingState) {
         setSorting(sorting);
-        setPagination({pageIndex: 0, pageSize: pagination.pageSize});
+        setPage({pageIndex: 0, pageSize: page.pageSize});
     }
 
     let queryData: any = undefined;
@@ -242,20 +231,17 @@ export function JTable(p: JTableParams) {
     if (p.dataSource) {
         const query = useQuery({
             queryKey: ["dsTable", p.dataSource!.name, {
-                page: {pageOffset: pagination.pageIndex, pageSize: pagination.pageSize},
+                page, sorting,
                 filter: filter ? {field: p.filterField, value: filter} : undefined,
-                sorting: convertSortingState(sorting)
             }],
 
             queryFn: async (ctx) => {
-                let res = await p.dataSource?.read(ctx.queryKey[2] as JTableDs_ReadParams);
-                await jk_timer.sleep(2000)
-                return res;
+                return p.dataSource?.read(ctx.queryKey[2] as JTableDs_ReadParams);
             },
 
             // The placeholder data are date returned while
             // loading the initial data set. Here where use the previous data set.
-            // Doing that avoid screen flickering.
+            // Doing that avoids screen flickering.
             //
             placeholderData: previousQueryData
         });
@@ -279,7 +265,7 @@ export function JTable(p: JTableParams) {
             columnFilters,
             columnVisibility,
             rowSelection,
-            pagination
+            pagination: page
         },
 
         data: p.dataSource ? queryData?.rows || [] : p.data!,
@@ -288,7 +274,7 @@ export function JTable(p: JTableParams) {
         manualSorting: p.dataSource ? true : undefined,
 
         columns: columns,
-        onPaginationChange: setPagination,
+        onPaginationChange: setPage,
 
         onSortingChange: (updater) => {
             const newSorting = typeof updater === 'function' ? updater(sorting) : updater;
