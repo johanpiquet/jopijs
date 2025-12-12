@@ -5,7 +5,6 @@ import * as jk_what from "jopi-toolkit/jk_what";
 import * as jk_events from "jopi-toolkit/jk_events";
 import * as jk_app from "jopi-toolkit/jk_app";
 import {PriorityLevel} from "jopi-toolkit/jk_tools";
-
 export {PriorityLevel} from "jopi-toolkit/jk_tools";
 
 const LOG = false;
@@ -838,6 +837,8 @@ export async function compile(importMeta: any, config: LinkerConfig, isRefresh =
         return undefined;
     }
 
+    gIsTypeScriptOnly = detectIfTypeScriptOnly(importMeta);
+
     // Reset the registry in case of a second call to compile.
     gRegistry = {};
 
@@ -847,8 +848,6 @@ export async function compile(importMeta: any, config: LinkerConfig, isRefresh =
 
     gDir_outputSrc = jk_fs.join(gDir_ProjectSrc, "_jopiLinkerGen");
     gDir_outputDst = jk_fs.join(gDir_ProjectDist, "_jopiLinkerGen");
-
-    gIsTypeScriptOnly = detectIfTypeScriptOnly(importMeta);
 
     gCodeGenWriter = new CodeGenWriter({
         project: gDir_ProjectRoot,
