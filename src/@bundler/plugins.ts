@@ -12,7 +12,7 @@ import {logServer_refresh} from "./_logs.ts";
 /**
  * This plugin allows replacing some text entries according to rules.
  */
-export function jopiReplaceText(): Plugin {
+export function jopiReplaceText__Old(): Plugin {
     async function getExistingSourceMap(filePath: string, source: string): Promise<string | null> {
         const sourceMapCommentMatch = source.match(/\/\/# sourceMappingURL=(.+)$/m);
         if (!sourceMapCommentMatch) return null;
@@ -36,9 +36,9 @@ export function jopiReplaceText(): Plugin {
         name: "jopi-replace-text",
 
         setup(build) {
-            build.onLoad({ filter: /\.(tsx|jsx|js)$/ }, async (args) => {
+            build.onLoad({ filter: /\.(tsx|jsx|ts|js)$/ }, async (args) => {
                 const oldContent = await fs.readFile(args.path, 'utf8');
-                let newContent = oldContent.replace("jBundler_ifServer", "jBundler_ifBrowser");
+                let newContent = oldContent.replaceAll("jBundler_ifServer", "jBundler_ifBrowser");
                 if (newContent === oldContent) return undefined;
 
                 const useSourceMap = !!build.initialOptions.sourcemap;
@@ -50,7 +50,7 @@ export function jopiReplaceText(): Plugin {
 
                 const existingSourceMap = await getExistingSourceMap(args.path, oldContent);
                 const magic = new MagicString(oldContent, {filename: args.path});
-                magic.replace("jBundler_ifServer", "jBundler_ifBrowser");
+                magic.replaceAll("jBundler_ifServer", "jBundler_ifBrowser");
 
                 const map = magic.generateMap({
                     file: args.path,
@@ -95,6 +95,23 @@ export function jopiReplaceText(): Plugin {
 
                 newContent = magic.toString() +
                     `\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(finalMap).toString('base64')}`;
+
+                let loader = path.extname(args.path).toLowerCase().substring(1);
+                return {contents: newContent, loader: loader as 'js' | 'jsx' | 'ts' | 'tsx'};
+            });
+        }
+    };
+}
+
+export function jopiReplaceText(): Plugin {
+    return {
+        name: "jopi-replace-text",
+
+        setup(build) {
+            build.onLoad({ filter: /\.(tsx|jsx|ts|js)$/ }, async (args) => {
+                const oldContent = await fs.readFile(args.path, 'utf8');
+                let newContent = oldContent.replaceAll("jBundler_ifServer", "jBundler_ifBrowser");
+                if (newContent === oldContent) return undefined;
 
                 let loader = path.extname(args.path).toLowerCase().substring(1);
                 return {contents: newContent, loader: loader as 'js' | 'jsx' | 'ts' | 'tsx'};
