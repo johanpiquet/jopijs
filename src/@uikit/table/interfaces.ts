@@ -2,7 +2,7 @@ import {type Table, type CellContext, type HeaderContext} from "@tanstack/react-
 
 import * as React from "react";
 import * as jk_schema from "jopi-toolkit/jk_schema";
-import type {JDataRowSource} from "jopi-toolkit/jk_data";
+import type {JTableDs} from "jopi-toolkit/jk_data";
 
 //region Rendering
 
@@ -113,7 +113,7 @@ export interface JFilterRendererParams {
 
 export interface JTableParams {
     data?: any[];
-    dataSource?: JDataRowSource;
+    dataSource?: JTableDs;
     schema?: jk_schema.Schema;
 
     variants: JTableVariants;

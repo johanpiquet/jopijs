@@ -3,14 +3,16 @@ import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_app from "jopi-toolkit/jk_app";
 import {normalizeNeedRoleConditionName} from "./common.ts";
 import {CodeGenWriter, FilePart, InstallFileType} from "./engine.ts";
-import type {JDataRowSource} from "jopi-toolkit/jk_data";
+import type {JTableDs} from "jopi-toolkit/jk_data";
+import * as jk_tools from "jopi-toolkit/jk_tools";
 
-interface TypeDataSource_Item extends TypeChunk_Item {
+interface TypeTable_Item extends TypeChunk_Item {
     mustExpose: boolean;
+    securityUid: string;
 }
 
-export default class TypeDataSource extends TypeChunk {
-    private toExpose: TypeDataSource_Item[] = [];
+export default class TypeTable extends TypeChunk {
+    private toExpose: TypeTable_Item[] = [];
 
     protected normalizeFeatureName(featureName: string, ctx: any|undefined): string|undefined {
         featureName = featureName.toLowerCase();
@@ -23,8 +25,18 @@ export default class TypeDataSource extends TypeChunk {
         return normalizeNeedRoleConditionName(condName, filePath, ctx, ["READ", "WRITE"]);
     }
 
-    async onChunk(chunk: TypeChunk_Item, key: string, _dirPath: string) {
-        let dsItem: TypeDataSource_Item = chunk as TypeDataSource_Item;
+    async onChunk(chunk: TypeChunk_Item, key: string, dirPath: string) {
+        const securityUidFile = jk_fs.join(dirPath, "security-ui.dontDelete");
+        let securityUid = await jk_fs.readTextFromFile(securityUidFile);
+
+        if (!securityUid) {
+            securityUid = jk_tools.generateUUIDv4();
+            await jk_fs.writeTextToFile(securityUidFile, securityUid);
+        }
+
+        let dsItem: TypeTable_Item = chunk as TypeTable_Item;
+
+        dsItem.securityUid = securityUid;
 
         // Must expose this data source to the network?
         dsItem.mustExpose = chunk.features?.["public"]===true;
@@ -36,7 +48,7 @@ export default class TypeDataSource extends TypeChunk {
     async beginGeneratingCode(writer: CodeGenWriter) {
         if (!this.toExpose.length) return;
 
-        writer.genAddToInstallFile(InstallFileType.server, FilePart.imports, `\nimport {exposeRowDataSource} from "jopijs";`);
+        writer.genAddToInstallFile(InstallFileType.server, FilePart.imports, `\nimport {exposeDataSource_Table} from "jopijs";`);
 
         let count = 0;
 
@@ -47,11 +59,11 @@ export default class TypeDataSource extends TypeChunk {
             let relPath = writer.makePathRelativeToOutput(dsItem.entryPoint);
             relPath = writer.toPathForImport(relPath, !writer.isTypeScriptOnly);
             writer.genAddToInstallFile(InstallFileType.server, FilePart.imports, `\nimport DS_${count} from "${relPath}";`);
-            writer.genAddToInstallFile(InstallFileType.server, FilePart.body, `\n    exposeRowDataSource("${dsName}", DS_${count}, ${JSON.stringify(dsItem.conditionsContext)});`);
+            writer.genAddToInstallFile(InstallFileType.server, FilePart.body, `\n    exposeDataSource_Table("${dsName}", "${dsItem.securityUid}", DS_${count}, ${JSON.stringify(dsItem.conditionsContext)});`);
         }
     }
 
-    async generateCodeForItem(writer: CodeGenWriter, key: string, dsItem: TypeDataSource_Item): Promise<void> {
+    async generateCodeForItem(writer: CodeGenWriter, key: string, dsItem: TypeTable_Item): Promise<void> {
         let targetName = key.substring(key.indexOf("!") + 1);
         let outDir = jk_fs.join(writer.dir.output_src, this.getGenOutputDir(dsItem));
         let entryPoint = jk_fs.getRelativePath(jk_fs.join(outDir, "index.ts"), dsItem.entryPoint);
@@ -61,8 +73,14 @@ export default class TypeDataSource extends TypeChunk {
         //
         await writer.writeCodeFile({
             fileInnerPath: jk_fs.join(this.getGenOutputDir(dsItem), targetName, "index"),
-            srcFileContent: writer.AI_INSTRUCTIONS + `import "./jBundler_ifServer.ts";`,
-            distFileContent: writer.AI_INSTRUCTIONS + `import "./jBundler_ifServer.js";`
+
+            srcFileContent: writer.AI_INSTRUCTIONS + `export * from "./jBundler_ifServer.ts";
+import DEFAULT from "./jBundler_ifServer.ts";
+export default DEFAULT;`,
+
+            distFileContent: writer.AI_INSTRUCTIONS + `export * from "./jBundler_ifServer.js";
+import DEFAULT from "./jBundler_ifServer.js";
+export default DEFAULT;`,
         });
 
         //region jBundler_ifServer.ts
@@ -88,7 +106,7 @@ export default C;`;
 
         let dsName = jk_fs.basename(dsItem.itemPath);
 
-        let dsImpl: JDataRowSource;
+        let dsImpl: JTableDs;
         let toImport = dsItem.entryPoint;
         if (!writer.isTypeScriptOnly) toImport = jk_app.getCompiledFilePathFor(toImport);
 
@@ -101,12 +119,12 @@ export default C;`;
         let jsonSchema = schema.toJson();
 
         srcCode = writer.AI_INSTRUCTIONS;
-        srcCode += "import {createRowDataSourceProxy} from 'jopi-toolkit/jk_data'";
-        srcCode += "\nimport {schema as newSchema} from 'jopi-toolkit/jk_schemas'";
-        srcCode += `\nexport const dataSourceName = "${dsName}";`;
+        srcCode += `import {JTableDs_HttpProxy} from "jopi-toolkit/jk_data";`;
+        srcCode += `\nimport {schema as newSchema} from "jopi-toolkit/jk_schema";`;
+        srcCode += `\n\nexport const dataSourceName = "${dsName}";`;
 
         srcCode += `\nexport const schema = newSchema(${JSON.stringify(jsonSchema.desc, null, 4)}, ${JSON.stringify(jsonSchema.schemaMeta, null, 4)});`;
-        srcCode += `\nexport default new JDataRowSource_HttpProxy(dataSourceName, "/_jopi/ds/${dsName}", schema)`;
+        srcCode += `\nexport default new JTableDs_HttpProxy(dataSourceName, "/_jopi/ds/${dsItem.securityUid}", schema)`;
         distCode = srcCode;
 
         await writer.writeCodeFile({

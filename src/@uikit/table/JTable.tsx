@@ -273,11 +273,13 @@ export function JTable(p: JTableParams) {
                 //
                 let offset = myRows.length;
 
-                let res = await provider.read({
+                const callParams = {
                     offset, count: maxOffset - offset,
                     filter: filter ? {field: p.filterField, value: filter} : undefined,
                     sorting: convertSortingState(sorting)
-                });
+                };
+                //
+                let res = await provider.read(callParams);
 
                 myRows = myRows.concat(res.rows);
 
