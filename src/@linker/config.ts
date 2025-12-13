@@ -6,6 +6,7 @@ import TypeUiComposite from "./typeUiComposite.ts";
 import ModInstaller from "./modInstaller.ts";
 import TypeRoutes from "./typeRoutes.ts";
 import TypeTable from "./typeTable.ts";
+import {TypeVariants} from "./typeVariants";
 
 // Here it's ASYNC.
 let gServerInstallFileTemplate = `__AI_INSTRUCTIONS
@@ -40,6 +41,8 @@ export function getDefaultLinkerConfig(): LinkerConfig {
             new TypeUiComposite("uiComposites"),
             new TypeEvents("events"),
             new TypeTable("tables"),
+
+            new TypeVariants("variants"),
 
             new TypeAsIsChunk("shadUI", [".tsx"]),
             new TypeAsIsChunk("shadLib", [".ts", ".tsx"]),
