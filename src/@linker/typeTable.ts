@@ -1,4 +1,4 @@
-import {TypeChunk, type TypeChunk_Item} from "./coreAliasTypes.ts";
+import {TypeInDirChunk, type TypeChunk_Item} from "./coreAliasTypes.ts";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_app from "jopi-toolkit/jk_app";
 import {normalizeNeedRoleConditionName} from "./common.ts";
@@ -23,7 +23,7 @@ interface TypeTable_Item extends TypeChunk_Item {
     securityUid: string;
 }
 
-export default class TypeTable extends TypeChunk {
+export default class TypeTable extends TypeInDirChunk {
     private toExpose: TypeTable_Item[] = [];
 
     protected getDefaultFeatures(): Record<string, boolean>|undefined {

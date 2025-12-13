@@ -1,12 +1,11 @@
 import type {LinkerConfig} from "./engine.ts";
 import * as jk_app from "jopi-toolkit/jk_app";
-import {TypeChunk} from "./coreAliasTypes.ts";
+import TypeAsIsChunk, {TypeInDirChunk} from "./coreAliasTypes.ts";
 import TypeEvents from "./typeEvents.ts";
 import TypeUiComposite from "./typeUiComposite.ts";
 import ModInstaller from "./modInstaller.ts";
 import TypeRoutes from "./typeRoutes.ts";
 import TypeTable from "./typeTable.ts";
-import TypeShadCN from "./typeShadCN.ts";
 
 // Here it's ASYNC.
 let gServerInstallFileTemplate = `__AI_INSTRUCTIONS
@@ -33,14 +32,18 @@ export function getDefaultLinkerConfig(): LinkerConfig {
         templateForBrowser: gBrowserInstallFileTemplate,
 
         aliasTypes: [
-            new TypeChunk("uiComponents"),
-            new TypeChunk("schemes"),
+            new TypeRoutes("routes", "root"),
+
+            new TypeInDirChunk("uiComponents"),
+            new TypeInDirChunk("schemes"),
             //
             new TypeUiComposite("uiComposites"),
             new TypeEvents("events"),
-            new TypeRoutes("routes", "root"),
             new TypeTable("tables"),
-            new TypeShadCN("shadcn", "root")
+
+            new TypeAsIsChunk("shadUI", [".tsx"]),
+            new TypeAsIsChunk("shadLib", [".ts", ".tsx"]),
+            new TypeAsIsChunk("shadHooks", [".ts", ".tsx"])
         ],
 
         modulesProcess: [

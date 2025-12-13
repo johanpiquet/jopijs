@@ -8,7 +8,7 @@ import {
     PriorityLevel,
     type RegistryItem,
     AliasType,
-    CodeGenWriter
+    CodeGenWriter, priorityNameToLevel
 } from "./engine.ts";
 
 //region TypeList
@@ -242,7 +242,7 @@ export class TypeList extends AliasType {
 
 //endregion
 
-//region TypeChunk
+//region TypeInDirChunk
 
 export interface TypeChunk_Item extends RegistryItem {
     entryPoint: string;
@@ -253,7 +253,7 @@ export interface TypeChunk_Item extends RegistryItem {
     features?: Record<string, boolean>;
 }
 
-export class TypeChunk extends AliasType {
+export class TypeInDirChunk extends AliasType {
     async onChunk(chunk: TypeChunk_Item, key: string, _dirPath: string) {
         this.registry_addItem(key, chunk);
     }
@@ -320,6 +320,89 @@ export class TypeChunk extends AliasType {
 
     protected getGenOutputDir(_chunk: TypeChunk_Item) {
         return this.typeName;
+    }
+}
+
+//endregion
+
+//region TypeAsIsChunk
+
+export default class TypeAsIsChunk extends AliasType {
+    constructor(public readonly typeName: string, private readonly allowedExtensions: string[], public readonly position?: "root"|undefined) {
+        super(typeName, position);
+    }
+    async processDir(p: { moduleDir: string; typeDir: string; genDir: string; }): Promise<void> {
+        let dirItems = await jk_fs.listDir(p.typeDir);
+        const priorityMap = this.createPriorityMap(dirItems);
+
+        for (let dirItem of dirItems) {
+            if (dirItem.isFile && this.isValidFile(dirItem)) {
+                let name = jk_fs.basename(dirItem.name);
+                let idx = name.lastIndexOf(".");
+                name = name.slice(0, idx);
+
+                let priority = priorityMap[name];
+
+                this.registry_addItem(this.typeName + "|" + name, {
+                    priority, itemPath: dirItem.fullPath, type: this
+                });
+            }
+        }
+    }
+
+    protected isValidFile(dirItem: jk_fs.DirItem): boolean {
+        let ext = jk_fs.extname(dirItem.name);
+        return this.allowedExtensions.includes(ext);
+    }
+
+    protected getGenOutputDir(item: RegistryItem): string {
+        return item.type.typeName;
+    }
+
+    async generateCodeForItem(writer: CodeGenWriter, key: string, item: RegistryItem): Promise<void> {
+        let idx = key.indexOf("|");
+        let itemName = key.slice(idx + 1);
+
+        let outputDir = this.getGenOutputDir(item);
+        let outDir = jk_fs.join(writer.dir.output_src, outputDir);
+        let entryPoint = jk_fs.getRelativePath(outDir, item.itemPath);
+
+        let srcCode = writer.AI_INSTRUCTIONS + `export * from "${writer.toPathForImport(entryPoint, false)}";`;
+        let distCode = writer.AI_INSTRUCTIONS + `export * from "${writer.toPathForImport(entryPoint, true)}";`;
+
+        await writer.writeCodeFile({
+            fileInnerPath: jk_fs.join(outputDir, itemName),
+            srcFileContent: srcCode,
+            distFileContent: distCode
+        });
+    }
+
+    private extractPriority(priority: string, filePath: string): PriorityLevel {
+        let priorityLevel = priorityNameToLevel(priority);
+
+        if (priorityLevel===undefined) {
+            throw this.declareError("Invalide priority level", filePath);
+        }
+
+        return priorityLevel;
+    }
+
+    protected createPriorityMap(dirItems: jk_fs.DirItem[]): Record<string, PriorityLevel> {
+        const priorityMap: Record<string, PriorityLevel> = {};
+
+        for (let dirItem of dirItems) {
+            if (dirItem.name.endsWith(".priority")) {
+                let name = dirItem.name.slice(0, -9);
+                let idx = name.indexOf(".");
+
+                let componentName = name.slice(0, idx);
+
+                let priority = name.slice(idx + 1);
+                priorityMap[componentName] = this.extractPriority(priority, dirItem.fullPath);
+            }
+        }
+
+        return priorityMap;
     }
 }
 
