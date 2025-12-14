@@ -120,7 +120,7 @@ export default class TypeRoutes extends AliasType {
     }
 
     private async scanAttributes(dirPath: string): Promise<RouteAttributes> {
-        const infos = await this.dir_extractInfos(dirPath, {
+        let dirInfos = await this.dir_extractInfos(dirPath, {
             allowConditions: true,
             requirePriority: true,
             requireRefFile: false
@@ -128,12 +128,13 @@ export default class TypeRoutes extends AliasType {
 
         const res: RouteAttributes = {
             configFile: await resolveFile(dirPath, ["config.tsx", "config.ts"]),
-            disableCache: (infos.features?.["autocache"] === true) ? true : undefined,
-            priority: infos.priority
+            disableCache: (dirInfos.features?.["autocache"] === true) ? true : undefined,
+            priority: dirInfos.priority,
+            dirInfos
         };
 
-        if (infos.conditionsContext && Object.values(infos.conditionsContext!).length) {
-            res.needRoles =  infos.conditionsContext;
+        if (dirInfos.conditionsContext && Object.values(dirInfos.conditionsContext!).length) {
+            res.needRoles =  dirInfos.conditionsContext;
         }
 
         return res;
@@ -186,6 +187,8 @@ export default class TypeRoutes extends AliasType {
                     let idx = name.lastIndexOf(".");
                     name = name.substring(0, idx);
 
+                    let isAccepted = true;
+
                     switch (name) {
                         case "page":
                             this.addToRegistry({verb: "PAGE", route, filePath: dirItem.fullPath, attributes: attributes});
@@ -211,6 +214,13 @@ export default class TypeRoutes extends AliasType {
                         case "onOPTIONS":
                             this.addToRegistry({verb: "OPTIONS", route, filePath: dirItem.fullPath, attributes: attributes});
                             break;
+                        default:
+                            isAccepted = false;
+                            break;
+                    }
+
+                    if (isAccepted) {
+                        await this.onItemAccepted(attributes.dirInfos);
                     }
                 }
             }

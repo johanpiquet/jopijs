@@ -111,9 +111,7 @@ function removeImportDoublon(globalCss: string, content: string): string {
         let tmp = line.trim();
 
         if (tmp.startsWith("@import")) {
-            if (foundImports[tmp]) {
-                continue;
-            }
+            if (foundImports[tmp]) continue;
             foundImports[tmp] = true;
         }
 

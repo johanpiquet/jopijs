@@ -3,12 +3,14 @@ import {type HttpMethod, JopiRequest, WebSiteImpl, type WebSiteRouteInfos} from 
 import * as jk_crypto from "jopi-toolkit/jk_crypto";
 import * as jk_events from "jopi-toolkit/jk_events";
 import {PriorityLevel} from "jopi-toolkit/jk_tools";
+import type {ExtractDirectoryInfosResult} from "../@linker";
 
 export interface RouteAttributes {
     needRoles?: Record<string, string[]>;
     disableCache?: boolean;
     priority?: PriorityLevel;
     configFile?: string;
+    dirInfos: ExtractDirectoryInfosResult;
 
     /**
      * When doing a catch-all, a slug can be set.
@@ -41,10 +43,13 @@ export async function routeBindPage(webSite: WebSiteImpl, reactComponent: React.
     const pageKey = "page_" + jk_crypto.fastHash(params.route);
     let infos: WebSiteRouteInfos;
 
+    // Catch all route?
     if (params.route.endsWith("*")) {
         infos = webSite.onPage(params.route, pageKey, reactComponent);
+        applyAttributes(infos, params.attributes, "PAGE");
     }
-    else {
+    else
+    {
         let specialPageHandler: (() => void) | undefined;
 
         if (params.route.startsWith("/error")) {
@@ -80,7 +85,9 @@ export async function routeBindPage(webSite: WebSiteImpl, reactComponent: React.
 
         // The page must not be visible if it's a special page.
         //
-        if (!specialPageHandler) {
+        if (specialPageHandler) {
+            specialPageHandler();
+        } else {
             //const REDIRECT_CODE = 301; // definitive
             const REDIRECT_CODE = 302; // temporary
 
@@ -108,11 +115,9 @@ export async function routeBindPage(webSite: WebSiteImpl, reactComponent: React.
                         return Response.redirect(req.urlInfos.href, REDIRECT_CODE);
                     });
                 }
-
-                applyAttributes(infos, params.attributes, "PAGE");
             }
-        } else {
-            specialPageHandler();
+
+            applyAttributes(infos, params.attributes, "PAGE");
         }
     }
 

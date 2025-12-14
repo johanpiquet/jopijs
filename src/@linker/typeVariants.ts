@@ -1,4 +1,4 @@
-import {type TypeChunk_Item, TypeInDirChunk} from "./coreAliasTypes";
+import {type TypeInDirChunk_Item, TypeInDirChunk} from "./coreAliasTypes";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 
 export class TypeVariants extends TypeInDirChunk {
@@ -32,7 +32,7 @@ export class TypeVariants extends TypeInDirChunk {
                             throw this.declareError("No 'index.ts' or 'index.tsx' file found", props.itemPath);
                         }
 
-                        const chunk: TypeChunk_Item = {
+                        const chunk: TypeInDirChunk_Item = {
                             type: this,
 
                             entryPoint: props.resolved?.entryPoint,
@@ -55,7 +55,7 @@ export class TypeVariants extends TypeInDirChunk {
         }
     }
 
-    protected getGenOutputDir(chunk: TypeChunk_Item) {
+    protected getGenOutputDir(chunk: TypeInDirChunk_Item) {
         return jk_fs.join(this.typeName, chunk.itemType);
     }
 }

@@ -141,7 +141,7 @@ export class TypeList extends AliasType {
         let entryPoint = item.entryPoint!;
 
         if (!entryPoint) {
-            let d = this.registry_requireItem<TypeChunk_Item>(item.ref!);
+            let d = this.registry_requireItem<TypeInDirChunk_Item>(item.ref!);
             if (d.itemType!==list.itemsType) {
                 throw this.declareError(`Type mismatch. Expect ${list.itemsType}`, d.itemPath)
             }
@@ -244,7 +244,7 @@ export class TypeList extends AliasType {
 
 //region TypeInDirChunk
 
-export interface TypeChunk_Item extends RegistryItem {
+export interface TypeInDirChunk_Item extends RegistryItem {
     entryPoint: string;
     itemType: string;
 
@@ -254,7 +254,7 @@ export interface TypeChunk_Item extends RegistryItem {
 }
 
 export class TypeInDirChunk extends AliasType {
-    async onChunk(chunk: TypeChunk_Item, key: string, _dirPath: string) {
+    async onChunk(chunk: TypeInDirChunk_Item, key: string, _dirPath: string) {
         this.registry_addItem(key, chunk);
     }
 
@@ -279,7 +279,7 @@ export class TypeInDirChunk extends AliasType {
                         throw this.declareError("No 'index.ts' or 'index.tsx' file found", props.itemPath);
                     }
 
-                    const chunk: TypeChunk_Item = {
+                    const chunk: TypeInDirChunk_Item = {
                         type: this,
 
                         entryPoint: props.resolved?.entryPoint,
@@ -302,7 +302,7 @@ export class TypeInDirChunk extends AliasType {
     }
 
     async generateCodeForItem(writer: CodeGenWriter, key: string, rItem: RegistryItem) {
-        const item = rItem as TypeChunk_Item;
+        const item = rItem as TypeInDirChunk_Item;
 
         let targetName = key.substring(key.indexOf("!") + 1);
         let outDir = jk_fs.join(writer.dir.output_src, this.getGenOutputDir(item));
@@ -318,7 +318,7 @@ export class TypeInDirChunk extends AliasType {
         });
     }
 
-    protected getGenOutputDir(_chunk: TypeChunk_Item) {
+    protected getGenOutputDir(_chunk: TypeInDirChunk_Item) {
         return this.typeName;
     }
 }

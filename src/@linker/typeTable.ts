@@ -1,4 +1,4 @@
-import {TypeInDirChunk, type TypeChunk_Item} from "./coreAliasTypes.ts";
+import {TypeInDirChunk, type TypeInDirChunk_Item} from "./coreAliasTypes.ts";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_app from "jopi-toolkit/jk_app";
 import {normalizeNeedRoleConditionName} from "./common.ts";
@@ -6,7 +6,7 @@ import {CodeGenWriter, FilePart, InstallFileType} from "./engine.ts";
 import type {JTableDs} from "jopi-toolkit/jk_data";
 import * as jk_tools from "jopi-toolkit/jk_tools";
 
-interface TypeTable_Item extends TypeChunk_Item {
+interface TypeTable_Item extends TypeInDirChunk_Item {
     /**
      * Must automatically expose this data source to the network?
      */
@@ -53,7 +53,7 @@ export default class TypeTable extends TypeInDirChunk {
         return normalizeNeedRoleConditionName(condName, filePath, ctx, ["READ", "WRITE"]);
     }
 
-    async onChunk(chunk: TypeChunk_Item, key: string, dirPath: string) {
+    async onChunk(chunk: TypeInDirChunk_Item, key: string, dirPath: string) {
         const securityUidFile = jk_fs.join(dirPath, "security-ui.dontDelete");
         let securityUid = await jk_fs.readTextFromFile(securityUidFile);
 

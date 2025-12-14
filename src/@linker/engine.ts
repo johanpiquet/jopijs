@@ -360,7 +360,7 @@ export abstract class AliasType {
     constructor(public readonly typeName: string, public readonly position?: "root"|undefined) {
     }
 
-    public initialize(aliasTypes: Record<string, AliasType>) {
+    public initialize(_aliasTypes: Record<string, AliasType>) {
     }
 
     abstract processDir(p: { moduleDir: string; typeDir: string; genDir: string; }): Promise<void>;
@@ -498,7 +498,7 @@ export abstract class AliasType {
             thisNameAsUID = myUid;
         }
 
-        await p.transform({
+        const transformParams = {
             itemName: thisName, uid: thisNameAsUID, refTarget,
             itemPath: thisFullPath, isFile: thisIsFile, resolved, priority,
             parentDirName: p.rootDirName,
@@ -506,7 +506,44 @@ export abstract class AliasType {
             conditions: result.conditionsFound,
             conditionsContext: result.conditionsContext,
             features: result.features
-        });
+        };
+
+        await this.checkIfItemAccepted(transformParams);
+
+        await p.transform(transformParams);
+    }
+
+    protected async checkIfItemAccepted(params: TransformItemParams): Promise<void> {
+        if (this.isItemAccepted(params)) {
+            await this.onItemAccepted(params);
+        }
+    }
+
+    protected isItemAccepted(params: TransformItemParams): boolean {
+        return !!(params.resolved && params.resolved.entryPoint);
+    }
+
+    protected async onItemAccepted(params: {itemPath: string, features?: Record<string, boolean|undefined>}): Promise<void> {
+        return this.addDefaultFiles(params);
+    }
+
+    protected async addDefaultFiles(params: {itemPath: string, features?: Record<string, boolean|undefined>}): Promise<void> {
+        let defaultFeatures = this.getDefaultFeatures();
+
+        if (defaultFeatures) {
+            if (!params.features) params.features = {};
+
+            for (let featureName in defaultFeatures) {
+                let current = params.features[featureName];
+
+                if (current === undefined) {
+                    params.features[featureName] = current = defaultFeatures[featureName];
+                }
+
+                if (current) await addNameIntoFile(jk_fs.join(params.itemPath, featureName + ".enable"));
+                else await addNameIntoFile(jk_fs.join(params.itemPath, featureName + ".disable"));
+            }
+        }
     }
 
     /**
@@ -656,7 +693,7 @@ export abstract class AliasType {
             }
         }
 
-        let result: ExtractDirectoryInfosResult = { dirItems: [] };
+        let result: ExtractDirectoryInfosResult = { itemPath: dirPath, dirItems: [] };
 
         const items = await getSortedDirItem(dirPath);
 
@@ -671,12 +708,9 @@ export abstract class AliasType {
             if (!result.features) result.features = {};
 
             for (let featureName in defaultFeatures) {
-                let current =  result.features[featureName];
-
-                if (current===undefined) {
-                    result.features[featureName] = current = defaultFeatures[featureName];
-                    if (current) await addNameIntoFile(jk_fs.join(dirPath, featureName + ".enable"));
-                    else await addNameIntoFile(jk_fs.join(dirPath, featureName + ".disable"));
+                let current = result.features[featureName];
+                if (current === undefined) {
+                    result.features[featureName] = defaultFeatures[featureName];
                 }
             }
         }
@@ -781,6 +815,7 @@ export interface TransformItemParams {
 
 export interface ExtractDirectoryInfosResult {
     dirItems: jk_fs.DirItem[];
+    itemPath: string;
 
     myUid?: string;
     priority?: PriorityLevel;
