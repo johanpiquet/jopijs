@@ -69,7 +69,21 @@ export async function getGlobalCssFileContent(config: BundlerConfig): Promise<st
     let rootDir = jk_fs.dirname(jk_app.findPackageJson());
     let dirItems = await jk_fs.listDir(jk_fs.join(rootDir, "src"));
 
-    let globalCss = `/* Warning: generated file */\n\n@import "tailwindcss";`;
+    let globalCss = `/* Warning: generated file */`;
+
+    let coreGlobalCssPath = jk_fs.join(rootDir, "global.css");
+
+    if (await jk_fs.isFile(coreGlobalCssPath)) {
+        let content = await jk_fs.readTextFromFile(coreGlobalCssPath);
+        globalCss += "\n\n/* --- Compiled from ./global.css --- */\n\n" + content;
+    }
+
+    coreGlobalCssPath = jk_fs.join(rootDir, "src/global.css");
+
+    if (await jk_fs.isFile(coreGlobalCssPath)) {
+        let content = await jk_fs.readTextFromFile(coreGlobalCssPath);
+        globalCss += "\n\n/* --- Compiled from ./src/global.css --- */\n\n" + content;
+    }
 
     for (let item of dirItems) {
         if (!item.isDirectory) continue;
@@ -81,12 +95,12 @@ export async function getGlobalCssFileContent(config: BundlerConfig): Promise<st
         if (content) {
             content = removeImportDoublon(globalCss, content);
 
-            globalCss += `\n\n/* --- Compiled from ${item.name}/global.css --- */`
+            globalCss += `\n\n/* --- Compiled from ./src/${item.name}/global.css --- */`
             globalCss += "\n" + content;
         }
     }
 
-    await jk_fs.writeTextToFile(jk_fs.join(rootDir, "global.css"), globalCss);
+    await jk_fs.writeTextToFile(jk_fs.join(rootDir, "global.compiled.css"), globalCss);
 
     return gGlobalCssContent = globalCss;
 }
