@@ -6,7 +6,8 @@ import {
     type JAutoFormFieldProps,
     type JCheckboxFormFieldProps, type JFormMessageProps, type JFieldProps,
     type JFormComponentProps,
-    type JFormController, type JNumberFormFieldProps, type JFileSelectFieldProps, type JTextFormFieldProps
+    type JFormController, type JNumberFormFieldProps, type JFileSelectFieldProps, type JTextFormFieldProps,
+    type JFieldLabelProps
 } from "./interfaces.ts";
 import {FormContext, JFormControllerImpl} from "./private.ts";
 import {useJForm, useJFormField, UseJFormMessage} from "./hooks.ts";
@@ -50,45 +51,60 @@ function renderField(variantName: string|undefined, p: JFieldProps) {
     if (!field) return <div style={{color: "red"}}><strong>Form error: the field '{p.name}' doesn't exist.</strong></div>;
 
     p = {...p};
-    if (p.title===undefined) p.title = field.title;
+    if (p.label===undefined) p.label = field.label;
     if (p.description===undefined) p.description = field.description;
     if (p.placeholder===undefined) p.placeholder = field.placeholder;
 
     if (!variantName) {
+        // For JAutoField, auto detect the variant.
         variantName = field.variantName;
     }
 
-    const V = useVariant(variantName, p.variant);
-    return <V {...p} field={field} />;
+    let variants = p.variants;
+    if (!variants) variants = React.useContext(VariantContext);
+    const V = useVariant(variantName, variants, p.renderer);
+
+    return <V {...p} field={field} variants={variants} />;
 }
 
-export function JAutoFormField({variant, ...p}: JAutoFormFieldProps) {
+export function JAutoFormField(p: JAutoFormFieldProps) {
     return renderField(undefined, p);
 }
 
 //region Form Types
 
+export function JFieldLabel(p: JFieldLabelProps) {
+    let variants = p.variants;
+    if (!variants) variants = React.useContext(VariantContext);
+    const V = useVariant("FieldLabel", variants, p.renderer);
+
+    return <V {...p} variants={variants} />;
+}
+
 export function JFormMessage(p: JFormMessageProps) {
     const message = UseJFormMessage();
     if (!message) return null;
 
-    const V = useVariant("FormMessage", p.variant);
-    return <V {...p} message={message} />;
+    let variants = p.variants;
+    if (!variants) variants = React.useContext(VariantContext);
+    const V = useVariant("FormMessage", variants, p.renderer);
+
+    return <V {...p} variants={variants} message={message} />;
 }
 
-export function JTextFormField({variant, ...p}: JTextFormFieldProps) {
+export function JTextFormField(p: JTextFormFieldProps) {
     return renderField("TextFormField", p);
 }
 
-export function JNumberFormField({variant, ...p}: JNumberFormFieldProps) {
+export function JNumberFormField(p: JNumberFormFieldProps) {
     return renderField("NumberFormField", p);
 }
 
-export function JCheckboxFormField({variant, ...p}: JCheckboxFormFieldProps) {
+export function JCheckboxFormField(p: JCheckboxFormFieldProps) {
     return renderField("CheckboxFormField", p);
 }
 
-export function JFileSelectField({variant, ...p}: JFileSelectFieldProps) {
+export function JFileSelectField(p: JFileSelectFieldProps) {
     return renderField("FileSelectField", p);
 }
 

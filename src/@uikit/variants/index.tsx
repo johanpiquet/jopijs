@@ -1,20 +1,16 @@
 import React from 'react';
+import type {JFormVariants} from "../forms/index.ts";
 
 export const VariantContext = React.createContext<any>({});
 
-export function VariantProvider({children, variants}: {children: React.ReactNode, variants?: any}) {
-    return <VariantContext.Provider value={variants}>
-        {children}
-    </VariantContext.Provider>
-}
+export function useVariant<T extends React.FC>(name: string, variants: JFormVariants|undefined, forceRenderer?: T|undefined) {
+    if (forceRenderer) return forceRenderer;
 
-export function useVariant<T extends React.FC>(name: string, defaultValue?: T|undefined) {
-    const variants = React.useContext(VariantContext);
-    return variants[name] ?? (defaultValue ?? variantNotFound(name));
-}
-
-function variantNotFound(variantName: string) {
-    return function () {
-        return <div>Variant not found: {variantName}</div>;
+    if (variants) {
+        let renderer = (variants as any)[name];
+        if (renderer) return renderer;
     }
+
+    const ctxVariants = React.useContext(VariantContext);
+    return ctxVariants[name];
 }

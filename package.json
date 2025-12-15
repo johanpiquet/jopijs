@@ -100,7 +100,12 @@
     },
     "./loader/loader.mjs": "./src/@loader/loader.mjs",
     "./bun-server-static": "./src/@loader/bunHtmlCompiler.mjs",
-    "./loader-tools": "./dist/@loader-tools/index.js",
+
+    "./loader-tools": {
+      "bun":  "./src/@loader-tools/index.ts",
+      "default": "./dist/@loader-tools/index.js"
+    },
+
     "./loader-client": {
       "bun": "./src/@loader-client/index.ts",
       "default": "./dist/@loader-client/index.js"

@@ -1,4 +1,3 @@
-import type {UiText} from "../helpers/tools";
 import {type Schema, type ValidationErrors} from "jopi-toolkit/jk_schema";
 import React from "react";
 
@@ -23,7 +22,7 @@ export interface JFieldController {
     error: boolean;
     errorMessage?: string;
 
-    title?: string;
+    label?: string;
     description?: string;
     placeholder?: string;
 
@@ -112,30 +111,41 @@ export interface JMessage {
 
 export interface JFieldProps {
     name: string;
-    title?: UiText;
-    description?: UiText;
+    label?: React.ReactNode;
+    description?: React.ReactNode;
     placeholder?: string;
 
-    variant?: React.FC<unknown>;
+    variants?: JFormVariants;
+    renderer?: React.FC<any>;
 
     id?: string;
-    className?: string;
 }
 
 export interface JFormMessageProps {
     id?: string;
     className?: string;
-    variant?: React.FC<unknown>;
+
+    variants?: JFormVariants;
+    renderer?: React.FC<any>;
+
     isBefore?: boolean;
     message?: JMessage;
 
-    errorMessage?: UiText;
+    errorMessage?: React.ReactNode;
+    dataErrorMessage?: React.ReactNode|false;
+    submittedMessage?: React.ReactNode|false;
 
-    // false: allows hiding the submitted message.
-    submittedMessage?: UiText|false;
+    hideIfFieldErrors?: boolean;
+}
 
-    // false: allows hiding the message if field errors.
-    fieldErrorMessage?: UiText|false;
+export interface JFieldLabelProps {
+    children: React.ReactNode;
+    variants?: JFormVariants;
+    renderer?: React.FC<any>;
+    labelFor?: string;
+    className?: string;
+
+    field: JFieldController;
 }
 
 export interface JTextFormFieldProps extends JFieldProps {
@@ -166,11 +176,94 @@ export interface JAutoFormFieldProps extends
 
 //endregion
 
+export interface PassThrough_FormMessage {
+    root: string;
+    text: string;
+}
+
+export interface PassThrough_FieldLabel {
+    label: string;
+}
+
+export interface PassThrough_TextFormField {
+    root: string;
+    textContainer: string;
+    description: string;
+    errorMessage: string;
+    label: string;
+
+    input: string;
+}
+
+export type PassThrough_NumberFormField  = PassThrough_TextFormField;
+
+export interface PassThrough_CheckboxFormField {
+    root: string;
+    textContainer: string;
+    description: string;
+    errorMessage: string;
+
+    label: string;
+    checkBox: string;
+}
+
 export interface JFormVariants {
+    /**
+     * The className used for error messages.
+     */
+    clz_ErrorMessage?: string;
+
+    //region FormMessage
+
+    textFormSubmitSuccess?: string;
+    textFormSubmitError?: string;
+    textFormDataError?: string;
+
     FormMessage(p: JFormMessageProps): React.ReactElement|null;
+    ptConfirm_FormMessage?: Partial<PassThrough_FormMessage>;
+    ptConfirmExtra_FormMessage?: Partial<PassThrough_FormMessage>;
+    ptError_FormMessage?: Partial<PassThrough_FormMessage>;
+    ptErrorExtra_FormMessage?: Partial<PassThrough_FormMessage>;
+
+    //endregion
+
+    //region FieldLabel
+
+    FieldLabel(p: JFieldLabelProps): React.ReactElement;
+
+    pt_FieldLabel?: Partial<PassThrough_FieldLabel>;
+    ptExtra_FieldLabel?: Partial<PassThrough_FieldLabel>;
+    ptError_FieldLabel?: Partial<PassThrough_FieldLabel>;
+
+    //endregion
+
+    //region TextFormField
 
     TextFormField(p: JTextFormFieldProps): React.ReactElement;
+    pt_TextFormField?: Partial<PassThrough_TextFormField>;
+    ptExtra_TextFormField?: Partial<PassThrough_TextFormField>;
+    ptError_TextFormField?: Partial<PassThrough_TextFormField>;
+
+    //endregion
+
+    //region NumberFormField
+
+    NumberFormField(p: JNumberFormFieldProps): React.ReactElement;
+    pt_NumberFormField?: Partial<PassThrough_NumberFormField>;
+    ptExtra_NumberFormField?: Partial<PassThrough_NumberFormField>;
+    ptError_NumberFormField?: Partial<PassThrough_NumberFormField>;
+
+    //endregion
+
+    //region CheckboxFormField
+
     CheckboxFormField(p: JCheckboxFormFieldProps): React.ReactElement;
+    pt_CheckboxFormField?: Partial<PassThrough_CheckboxFormField>;
+    ptExtra_CheckboxFormField?: Partial<PassThrough_CheckboxFormField>;
+    ptError_CheckboxFormField?: Partial<PassThrough_CheckboxFormField>;
+
+    //endregion
+
     NumberFormField(p: JNumberFormFieldProps): React.ReactElement;
     FileSelectField(p: JFileSelectFieldProps): React.ReactElement;
 }
