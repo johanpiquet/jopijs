@@ -7,6 +7,7 @@ import ModInstaller from "./modInstaller.ts";
 import TypeRoutes from "./typeRoutes.ts";
 import TypeTable from "./typeTable.ts";
 import {TypeVariants} from "./typeVariants";
+import ModPackageJson from "./modPackageJson";
 
 // Here it's ASYNC.
 let gServerInstallFileTemplate = `__AI_INSTRUCTIONS
@@ -51,7 +52,8 @@ export function getDefaultLinkerConfig(): LinkerConfig {
         ],
 
         modulesProcess: [
-            new ModInstaller()
+            new ModInstaller(),
+            new ModPackageJson()
         ]
     }
 }
