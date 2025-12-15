@@ -207,6 +207,30 @@ export interface PassThrough_CheckboxFormField {
     checkBox: string;
 }
 
+export interface PassThrough_FileSelectField {
+    root: string;
+
+    dropZone: string;
+    dropZoneIfDragOver: string;
+    dropZoneIfNotDragOver: string;
+
+    dropZoneIcon: string;
+    dropZoneIconSvg: string;
+    dropZoneTitle: string;
+    dropZoneSubTitle: string;
+
+    errorMessage: string;
+
+    filePreviewRoot: string;
+    filePreviewIcon: string;
+    filePreviewIconSvg: string;
+
+    fileTitle: string;
+    fileSize: string;
+    fileRemove: string;
+    fileRemoveSvg: string;
+}
+
 export interface JFormVariants {
     /**
      * The className used for error messages.
@@ -264,6 +288,14 @@ export interface JFormVariants {
 
     //endregion
 
-    NumberFormField(p: JNumberFormFieldProps): React.ReactElement;
+    //region FileSelectField
+
     FileSelectField(p: JFileSelectFieldProps): React.ReactElement;
+
+    pt_FileSelectField?: Partial<PassThrough_FileSelectField>;
+    ptExtra_FileSelectField?: Partial<PassThrough_FileSelectField>;
+    ptError_FileSelectField?: Partial<PassThrough_FileSelectField>;
+
+    //endregion
+
 }
