@@ -296,9 +296,9 @@ export interface JFormVariants {
     ptExtra_FileSelectField?: Partial<PassThrough_FileSelectField>;
     ptError_FileSelectField?: Partial<PassThrough_FileSelectField>;
 
-    textFileSelectFieldTitle: string;
-    textFileSelectFieldSubTitle: string;
-    textFileSelectFieldDragging: string;
+    textFileSelectFieldTitle?: string;
+    textFileSelectFieldSubTitle?: string;
+    textFileSelectFieldDragging?: string;
 
     //endregion
 
