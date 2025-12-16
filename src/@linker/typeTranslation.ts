@@ -163,11 +163,15 @@ export class TypeTranslation extends AliasType {
 
     //endregion
 
+    //region Code gen
+
     async beginGeneratingCode(writer: CodeGenWriter): Promise<void> {
         for (let trGroupName in this.registry) {
             let trGroup = this.registry[trGroupName];
             let dirName = jk_fs.join("translations", trGroupName);
 
+            // Generate a file by lang.
+            //
             for (let lang in trGroup.langFiles) {
                 const def = trGroup.langFiles[lang];
                 const src = this.generateCodeFor(lang, def);
@@ -179,10 +183,42 @@ export class TypeTranslation extends AliasType {
                 });
             }
 
+            // Generate the default lang.
+            //
             await writer.writeCodeFile({
                 fileInnerPath: jk_fs.join(dirName, "default"),
                 srcFileContent: `import D from "./${trGroup.defaultLang}.ts";\nexport default D;`,
                 distFileContent:`import D from "./${trGroup.defaultLang}.js";\nexport default D;`,
+            });
+
+            // Generate the index.
+            // It allows accessing all lang in one shot.
+            //
+            let srcCode = "";
+            let dstCode = "";
+            let i = 0;
+
+            let map = "const byLang = {";
+
+            for (let lang in trGroup.langFiles) {
+                i++;
+                srcCode += `import L${i} from "./${lang}.ts";\n`;
+                dstCode += `import L${i} from "./${lang}.js";\n`;
+                map += `\n    "${lang}": L${i},`
+            }
+
+            srcCode += `import defaultLang from "./default.ts";\n`
+            dstCode += `import defaultLang from "./default.js";\n`
+
+            map += "\n};";
+
+            srcCode += `\n${map}\n\nexport function get(lang: string) { return ((byLang as any)[lang]) || defaultLang }`;
+            dstCode += `\n${map}\n\nexport function get(lang) { return (byLang[lang]) || defaultLang }`;
+
+            await writer.writeCodeFile({
+                fileInnerPath: jk_fs.join(dirName, "index"),
+                srcFileContent: srcCode,
+                distFileContent: dstCode,
             });
         }
     }
@@ -355,6 +391,8 @@ export class TypeTranslation extends AliasType {
     }
 
     private nextFctId = 0;
+
+    //endregion
 }
 
 interface DataFunctionInfos {
