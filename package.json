@@ -31,7 +31,6 @@
   },
   "scripts": {
     "build:priority:2": "npx tsc",
-    "bun-publish": "bun publish",
     "untrack": "git rm -r --cached -- ./dist/**;",
     "jopiLink": "npx jopi-mono link-add",
     "dev:tsc": "npx tsc --watch"

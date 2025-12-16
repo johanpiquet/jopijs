@@ -8,6 +8,7 @@ import TypeRoutes from "./typeRoutes.ts";
 import TypeTable from "./typeTable.ts";
 import {TypeVariants} from "./typeVariants";
 import ModPackageJson from "./modPackageJson";
+import {TypeTranslation} from "./typeTranslation";
 
 // Here it's ASYNC.
 let gServerInstallFileTemplate = `__AI_INSTRUCTIONS
@@ -44,11 +45,12 @@ export function getDefaultLinkerConfig(): LinkerConfig {
             new TypeTable("tables"),
 
             new TypeVariants("variants"),
+            new TypeTranslation("translations"),
 
-            new TypeAsIsChunk("shadUI", [".tsx"]),
-            new TypeAsIsChunk("shadComponents", [".tsx"]),
-            new TypeAsIsChunk("shadLib", [".ts", ".tsx"]),
-            new TypeAsIsChunk("shadHooks", [".ts", ".tsx"])
+            //new TypeAsIsChunk("shadUI", [".tsx"]),
+            //new TypeAsIsChunk("shadComponents", [".tsx"]),
+            //new TypeAsIsChunk("shadLib", [".ts", ".tsx"]),
+            //new TypeAsIsChunk("shadHooks", [".ts", ".tsx"])
         ],
 
         modulesProcess: [
