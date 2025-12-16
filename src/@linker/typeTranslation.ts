@@ -178,8 +178,8 @@ export class TypeTranslation extends AliasType {
 
                 await writer.writeCodeFile({
                     fileInnerPath: jk_fs.join(dirName, lang),
-                    srcFileContent: src,
-                    distFileContent: src,
+                    srcFileContent: src.ts,
+                    distFileContent: src.js,
                 });
             }
 
@@ -213,7 +213,7 @@ export class TypeTranslation extends AliasType {
             map += "\n};";
 
             srcCode += `\n${map}\n\nexport function get(lang: string) { return ((byLang as any)[lang]) || defaultLang }`;
-            dstCode += `\n${map}\n\nexport function get(lang) { return (byLang[lang]) || defaultLang }`;
+            dstCode += `\n\nexport function get(lang) { return (byLang[lang]) || defaultLang }`;
 
             await writer.writeCodeFile({
                 fileInnerPath: jk_fs.join(dirName, "index"),
@@ -223,7 +223,7 @@ export class TypeTranslation extends AliasType {
         }
     }
 
-    private generateCodeFor(lang: string, def: Record<string, string>): string {
+    private generateCodeFor(lang: string, def: Record<string, string>) {
         //region Group the single and the plural
 
         let trSinglePlural: Record<string, TrSinglePlural> = {};
@@ -256,10 +256,11 @@ export class TypeTranslation extends AliasType {
 
         //region Generates the code
 
-        let header = "";
+        let srcHeader = "";
+        let distHeader = "";
 
-        let body = `export const lang = "${lang}";`;
-        body += `\n\nexport default {`
+        let srcBody = `export const lang = "${lang}";\n\nexport default {`;
+        let distBody = srcBody;
 
         for (let key in trSinglePlural) {
             let value = trSinglePlural[key];
@@ -269,37 +270,58 @@ export class TypeTranslation extends AliasType {
             }
 
             if (value.hasData) {
-                const dataFunction = this.generateSourceHeaderInfos(value);
+                const dataFunctionTS = this.generateSourceHeaderInfos(value, true);
+                const dataFunctionJS = this.generateSourceHeaderInfos(value, false);
 
-                header += dataFunction.paramsDefInterface + "\n\n";
-                header += dataFunction.pluralFunction;
-                header += dataFunction.singleFunction;
+                srcHeader += dataFunctionTS.paramsDefInterface + "\n\n";
+                distHeader += dataFunctionJS.paramsDefInterface + "\n\n";
+
+                srcHeader += dataFunctionTS.pluralFunction;
+                distHeader += dataFunctionJS.pluralFunction;
+
+                srcHeader += dataFunctionTS.singleFunction;
+                distHeader += dataFunctionJS.singleFunction;
 
                 if (value.plural) {
-                    body += `\n    ${key}_plural(count: number, data: ${dataFunction.paramsTypeName}) {
-        if (count>1) return ${dataFunction.nameFctPlural}(data);
-        else return ${dataFunction.nameFctSingle}(data);
+                    srcBody += `\n    ${key}_plural(count: number, data: ${dataFunctionTS.paramsTypeName}) {
+        if (count>1) return ${dataFunctionTS.nameFctPlural}(data);
+        return ${dataFunctionTS.nameFctSingle}(data);
+},`
+                    distBody += `\n    ${key}_plural(count: number, data) {
+        if (count>1) return ${dataFunctionJS.nameFctPlural}(data);
+        return ${dataFunctionJS.nameFctSingle}(data);
 },`
                 } else {
-                    body += `\n    ${key}(data: ${dataFunction.paramsTypeName}) { return ${dataFunction.nameFctSingle}(data); },`
+                    srcBody += `\n    ${key}(data: ${dataFunctionTS.paramsTypeName}) { return ${dataFunctionTS.nameFctSingle}(data); },`
+                    distBody += `\n    ${key}(data) { return ${dataFunctionJS.nameFctSingle}(data); },`
                 }
             } else {
                 if (value.plural) {
-                    body += `\n    ${key}_plural(count: number) {
+                    srcBody += `\n    ${key}_plural(count: number) {
         if (count>1) return ${JSON.stringify(value.plural.value)}
-        else return ${JSON.stringify(value.single!.value)}
+        return ${JSON.stringify(value.single!.value)}
+},`
+                    distBody += `\n    ${key}_plural(count) {
+        if (count>1) return ${JSON.stringify(value.plural.value)}
+        return ${JSON.stringify(value.single!.value)}
 },`
                 } else {
-                    body += `\n    ${key}() { return ${JSON.stringify(value.single!.value)} },`
+                    const v = `\n    ${key}() { return ${JSON.stringify(value.single!.value)} },`;
+                    srcBody += v;
+                    distBody += v;
                 }
             }
         }
 
-        body += "\n}"
+        srcBody += "\n}"
+        distBody += "\n}"
 
         //endregion
 
-        return `${header}${body}`;
+        return {
+            ts: `${srcHeader}${srcBody}`,
+            js: `${distHeader}${distBody}`
+        };
     }
 
     private parseValue(value: string): TrParsed {
@@ -342,17 +364,31 @@ export class TypeTranslation extends AliasType {
         }
     }
 
-    private generateSourceHeaderInfos(tr: TrSinglePlural): DataFunctionInfos {
+    private generateSourceHeaderInfos(tr: TrSinglePlural, typeScript: boolean): DataFunctionInfos {
         const fctId = this.nextFctId++;
         const nameFctSingle = "fs_" + fctId;
         const nameFctPlural = "fp_" + fctId;
         const paramsTypeName = `I${fctId}`;
 
         let singleFunction = this.generateDataFunctionBody(tr.single?.segments);
-        singleFunction = singleFunction.length ? `function ${nameFctSingle}(data: ${paramsTypeName}): string {${singleFunction}}\n\n` : "";
+
+        if (singleFunction.length) {
+            if (typeScript) {
+                singleFunction = `function ${nameFctSingle}(data: ${paramsTypeName}): string {${singleFunction}}\n\n`;
+            } else {
+                singleFunction = `function ${nameFctSingle}(data) {${singleFunction}}\n\n`;
+            }
+        }
 
         let pluralFunction = this.generateDataFunctionBody(tr.plural?.segments);
-        pluralFunction = pluralFunction.length ? `function ${nameFctPlural}(data: ${paramsTypeName}): string {${pluralFunction}}\n\n` : "";
+
+        if (pluralFunction.length) {
+            if (typeScript) {
+                pluralFunction = `function ${nameFctPlural}(data: ${paramsTypeName}): string {${pluralFunction}}\n\n`;
+            } else {
+                pluralFunction = `function ${nameFctPlural}(data) {${pluralFunction}}\n\n`;
+            }
+        }
 
         let paramsDefInterface = `interface I${fctId} {`;
 
