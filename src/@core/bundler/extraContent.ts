@@ -19,8 +19,6 @@ export function getExtraCssToBundle(): string[] {
 }
 
 jk_events.addListener<VirtualUrlEntry>("jopi.virtualUrl.added", (v) => {
-    if (!v.url) debugger;
-
     if (v.url && v.url.endsWith(".css") || v.url.endsWith(".scss")) {
         addExtraCssToBundle(v.sourceFile);
     }

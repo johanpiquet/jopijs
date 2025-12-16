@@ -308,8 +308,6 @@ class InMemoryCache implements PageCache {
 
     private garbageCollector() {
         const removeEntry = (key: string, cacheEntry: MyCacheEntry) => {
-            if (key.endsWith(".html")) debugger;
-
             keyToRemove.push(key);
             this.statItemCount--;
 
