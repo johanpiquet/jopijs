@@ -47,35 +47,6 @@ export function findNodePackageEntryPoint(nodePackageDir: string): string {
     return path.join(nodePackageDir, 'dist', 'index.js');
 }
 
-/**
- * Searches for the directory of a specified module.
- *
- * @param packageName - The name of the module to find.
- * @return The path to the module directory if found, or null if not found.
- */
-export function findNodePackageDir(packageName: string): string|null {
-    let currentDir = process.cwd();
-
-    while (true) {
-        const packagePath = path.join(currentDir, 'node_modules', packageName);
-
-        if (fss.existsSync(packagePath)) {
-            return packagePath;
-        }
-
-        const parentDir = path.dirname(currentDir);
-
-        // Reached root directory
-        if (parentDir === currentDir) {
-            break;
-        }
-
-        currentDir = parentDir;
-    }
-
-    return null;
-}
-
 let gCache_getPathAliasInfo: PathAliasInfo|undefined;
 
 export interface PathAliasInfo {
