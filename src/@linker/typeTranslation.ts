@@ -239,7 +239,7 @@ export class TypeTranslation extends AliasType {
             map += "\n};";
 
             srcCode += `\n${map}\n\nexport default function get(lang: string) { return ((byLang as any)[lang]) || defaultLang }`;
-            dstCode += `\n\nexport default function get(lang) { return (byLang[lang]) || defaultLang }`;
+            dstCode += `\n${map}\n\nexport default function get(lang) { return (byLang[lang]) || defaultLang }`;
 
             await writer.writeCodeFile({
                 fileInnerPath: jk_fs.join(dirName, "index"),
@@ -300,7 +300,6 @@ export class TypeTranslation extends AliasType {
                 const dataFunctionJS = this.generateSourceHeaderInfos(value, false);
 
                 srcHeader += dataFunctionTS.paramsDefInterface + "\n\n";
-                distHeader += dataFunctionJS.paramsDefInterface + "\n\n";
 
                 srcHeader += dataFunctionTS.pluralFunction;
                 distHeader += dataFunctionJS.pluralFunction;
