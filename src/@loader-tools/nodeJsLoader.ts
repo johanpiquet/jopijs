@@ -30,8 +30,8 @@ let gRequire: NodeJS.Require|undefined;
  *      The alias definitions are taken in the paths section of tsconfig.json.
  *
  * 2- Resolving import for an exposed file inside a module
- *      Example:                import 'primereact/sidebar'
- *      where the target is     import 'primereact/sidebar/index.mjs.js'
+ *      Example: import 'primereact/sidebar'
+ *      where the target is import 'primereact/sidebar/index.mjs.js'
  */
 export const resolveNodeJsAlias: ResolveHook = async (specifier, context, nextResolve): Promise<ResolveFnOutput> => {
     if (!gPathAliasInfos) {
@@ -43,8 +43,11 @@ export const resolveNodeJsAlias: ResolveHook = async (specifier, context, nextRe
     if (specifier[0]==='@') {
         let foundAlias = "";
 
+        // Avoid testing "@/routes" again "@/routes/".
+        let specifierWithSlash = specifier + "/";
+
         for (const alias in gPathAliasInfos.alias) {
-            if (specifier.startsWith(alias)) {
+            if (specifierWithSlash.startsWith(alias)) {
                 if (foundAlias.length < alias.length) {
                     foundAlias = alias;
                 }
@@ -54,10 +57,24 @@ export const resolveNodeJsAlias: ResolveHook = async (specifier, context, nextRe
         if (foundAlias) {
             if (LOG) console.log(`jopi-loader - Found alias ${foundAlias} for resource ${specifier}`);
 
-            let pathAlias = gPathAliasInfos.alias[foundAlias];
-            const resolvedPath = specifier.replace(foundAlias, pathAlias);
+            const pathAlias = gPathAliasInfos.alias[foundAlias];
+            let resolvedPath: string;
 
-            let filePath = resolvedPath.endsWith('.js') ? resolvedPath : `${resolvedPath}.js`;
+            if (specifierWithSlash===foundAlias) resolvedPath = pathAlias;
+            else resolvedPath = specifier.replace(foundAlias, pathAlias);
+
+            let filePath: string;
+
+            if (resolvedPath.endsWith(".ts")) {
+                resolvedPath = resolvedPath.slice(0, -2) + "js";
+                filePath = resolvedPath;
+            }
+            else if (resolvedPath.endsWith('.js')) {
+                filePath = resolvedPath;
+            } else {
+                filePath = resolvedPath + ".js";
+            }
+
             filePath = jk_app.getCompiledFilePathFor(filePath);
 
             if (await jk_fs.isFile(filePath)) {

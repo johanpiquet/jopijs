@@ -78,7 +78,8 @@ export default class TypeRoutes extends AliasType {
 
         await writer.writeCodeFile({
             fileInnerPath: "routes",
-            srcFileContent: srcRouteFiles
+            srcFileContent: srcRouteFiles,
+            distFileContent: srcRouteFiles
         });
     }
 

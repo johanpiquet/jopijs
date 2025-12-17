@@ -96,6 +96,7 @@ export async function getPathAliasInfo(): Promise<PathAliasInfo> {
             let pathAlias = paths[alias].pop() as string;
             if (!pathAlias) continue;
 
+            let isWildcard = pathAlias.endsWith("*");
             if (alias.endsWith("*")) alias = alias.substring(0, alias.length - 1);
             if (pathAlias.endsWith("*")) pathAlias = pathAlias.substring(0, pathAlias.length - 1);
 
@@ -104,7 +105,7 @@ export async function getPathAliasInfo(): Promise<PathAliasInfo> {
             }
 
             if (!alias.endsWith("/")) alias += "/";
-            if (!pathAlias.endsWith("/")) pathAlias += "/";
+            if (isWildcard && !pathAlias.endsWith("/")) pathAlias += "/";
 
             declaredAliases[alias] = pathAlias;
         }
