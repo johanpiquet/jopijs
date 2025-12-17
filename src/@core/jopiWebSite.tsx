@@ -173,13 +173,17 @@ export interface CacheRules {
      * Define a function which is called before checking the cache.
      * This allows doing some checking, and if needed, it can return
      * a response and bypass the request cycle.
+     *
+     * !! Warning !!
+     * You will have to sanitize yourself the url or call manually `req.req_clearSearchParamsAndHash`.
      */
     beforeCheckingCache?: (req: JopiRequest) => Promise<Response | undefined | void>;
 
     /**
-     * Is called if the response is not in the cache.
-     * If this function is not set, then a call to `req.user_fakeNoUsers()` is done
-     * to force the cached page to be anonymous and not bound to a specific user.
+     * Define a function which is called when the response is not in the cache.
+     *
+     * !! Warning !!
+     * Defining this function disables the automatic call to `req.user_fakeNoUsers()`.
      */
     ifNotInCache(req: JopiRequest, isPage: boolean): void;
 }
@@ -453,6 +457,11 @@ export class WebSiteImpl implements WebSite {
                         if (r) {
                             return fPostMiddleware ? fPostMiddleware(req, r) : r;
                         }
+                    } else if (isPage) {
+                        // Remove the search params and the href
+                        // for security reasons to avoid cache poisoning.
+                        //
+                        req.req_clearSearchParamsAndHash();
                     }
 
                     let res = await req.cache_getFromCache();

@@ -145,6 +145,18 @@ export class JopiRequest {
 
     //endregion
 
+    //region Request
+
+    /**
+     * Remove the hash (#this-part) and search params (?a=this-part) from the url.
+     */
+    req_clearSearchParamsAndHash() {
+        this.urlInfos.search = "";
+        this.urlInfos.hash = "";
+    }
+
+    //endregion
+
     //region Body transforming
 
     /**

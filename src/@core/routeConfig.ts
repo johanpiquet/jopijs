@@ -131,6 +131,9 @@ class RouteConfig_OnGET extends RouteConfig_Core {
      * Define a function which is called before checking the cache.
      * This allows doing some checking, and if needed, it can return
      * a response and bypass the request cycle.
+     *
+     * !! Warning !!
+     * You will have to sanitize yourself the url or call manually `req.req_clearSearchParamsAndHash`.
      */
     cache_beforeCheckingCache(handler: (req: JopiRequest) => Promise<Response | undefined | void>) {
         let routeInfos = this.webSite.getRouteInfos("GET", this.route);
@@ -141,8 +144,9 @@ class RouteConfig_OnGET extends RouteConfig_Core {
 
     /**
      * Define a function which is called when the response is not in the cache.
-     * If this function is not set, then a call to `req.user_fakeNoUsers()` is done
-     * to force the cached page to be anonymous and not bound to a specific user.
+     *
+     * !! Warning !!
+     * Defining this function disables the automatic call to `req.user_fakeNoUsers()`.
      */
     cache_ifNotInCache(handler: (req: JopiRequest) => void): void {
         let routeInfos = this.webSite.getRouteInfos("GET", this.route);
