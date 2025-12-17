@@ -52,7 +52,8 @@ export function useParams(): any {
 
 export function RouterLink({to, onClick, children, ...p}: React.ComponentProps<"a"> & {
     to: string|undefined, onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void,
-    children?: React.ReactNode
+    children?: React.ReactNode,
+    params?: any
 })
 {
     return <a href={to} onClick={onClick} {...p}>{children}</a>;
