@@ -23,25 +23,11 @@ export default class TypeRoutes extends AliasType {
     private routeConfig: Record<string, RouteAttributes> = {};
 
     async beginGeneratingCode(writer: CodeGenWriter): Promise<void> {
-        // For: import routes from "@/routes";
-        // Export a map url --> page component.
-        //
-        let srcRouteFiles = writer.AI_INSTRUCTIONS + `import React from "react";\n\nexport default {`;
+        await this.genCode_AliasRoutes(writer);
+        await this.genCode_DeclareServerRoutes(writer);
+    }
 
-        for (let item of Object.values(this.registry)) {
-            if (item.verb==="PAGE") {
-                let relPath = jk_fs.getRelativePath(writer.dir.output_src, item.filePath);
-                relPath = writer.toPathForImport(relPath, false);
-
-                srcRouteFiles += `\n    "${item.route}": React.lazy(() => import(${JSON.stringify(relPath)})),`;
-                this.bindPage(writer, item.route, item.filePath, item.attributes);
-            } else {
-                this.bindVerb(writer, item.verb, item.route, item.filePath, item.attributes);
-            }
-        }
-
-        srcRouteFiles += "\n};";
-
+    private async genCode_DeclareServerRoutes(writer: CodeGenWriter) {
         if (Object.keys(this.routeConfig).length>0) {
             this.sourceCode_header += `\nimport {RouteConfig} from "jopijs";`;
 
@@ -75,11 +61,93 @@ export default class TypeRoutes extends AliasType {
 
         writer.genAddToInstallFile(InstallFileType.server, FilePart.imports, `\nimport declareRoutes from "./declareServerRoutes.js";`);
         writer.genAddToInstallFile(InstallFileType.server, FilePart.footer, "\n    onWebSiteCreated((webSite) => declareRoutes(webSite));");
+    }
+
+    private async genCode_AliasRoutes(writer: CodeGenWriter) {
+        const myDir = jk_fs.join(writer.dir.output_src, "routes");
+
+        const generateRoutes = (browserSide: boolean) => {
+            // For: import routes from "@/routes";
+            // Export a map url --> page component.
+            //
+            let srcRouteFiles =
+                `import React from "react";
+
+export default {`;
+
+            let headers = writer.AI_INSTRUCTIONS;
+            let count = 0;
+
+            for (let item of Object.values(this.registry)) {
+                if (item.verb==="PAGE") {
+                    count++;
+
+                    let relPath = jk_fs.getRelativePath(myDir, item.filePath);
+                    relPath = writer.toPathForImport(relPath, false);
+
+                    if (browserSide) {
+                        srcRouteFiles += `\n    "${item.route}": React.lazy(() => import(${JSON.stringify(relPath)})),`;
+                    } else {
+                        headers += `import I${count} from ${JSON.stringify(relPath)};\n`;
+                        srcRouteFiles += `\n    "${item.route}": I${count},`;
+                    }
+
+                    this.bindPage(writer, item.route, item.filePath, item.attributes);
+                } else {
+                    this.bindVerb(writer, item.verb, item.route, item.filePath, item.attributes);
+                }
+            }
+
+            srcRouteFiles += "\n};";
+
+            return headers + srcRouteFiles;
+        }
+
+        const routesBrowserSide = generateRoutes(true);
+
+        let srcCommon =
+`import { jsx as _jsx } from "react/jsx-runtime";
+import routes from "./jBundler_ifServer.ts";
+export * as routes from "./jBundler_ifServer.ts";
+`;
+
+        srcCommon += `
+export function error404() {
+    let F = routes["/error404"];
+    if (!F) return () => _jsx("div", { children: "Error 404: put a @routes/error404/page.tsx file for personalizing it" });
+    return F;
+}
+
+export function error500() {
+    let F = routes["/error500"];
+    if (!F) return () => _jsx("div", { children: "Error 404: put a @routes/error500/page.tsx file for personalizing it" });
+    return F;
+}
+
+export function error401() {
+    let F = routes["/error401"];
+    if (!F) return () => _jsx("div", { children: "Error 404: put a @routes/error401/page.tsx file for personalizing it" });
+    return F;
+}`;
 
         await writer.writeCodeFile({
-            fileInnerPath: "routes",
-            srcFileContent: srcRouteFiles,
-            distFileContent: srcRouteFiles
+            fileInnerPath: jk_fs.join("routes", "index"),
+            srcFileContent: srcCommon,
+            distFileContent: srcCommon
+        });
+
+        await writer.writeCodeFile({
+            fileInnerPath: jk_fs.join("routes", "jBundler_ifBrowser"),
+            srcFileContent: routesBrowserSide,
+            distFileContent: routesBrowserSide
+        });
+
+        const routesServerSide = generateRoutes(false);
+
+        await writer.writeCodeFile({
+            fileInnerPath: jk_fs.join("routes", "jBundler_ifServer"),
+            srcFileContent: routesServerSide,
+            distFileContent: routesServerSide
         });
     }
 
