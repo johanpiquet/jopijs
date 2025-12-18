@@ -1,7 +1,7 @@
 // noinspection JSUnusedGlobalSymbols
 
 import React from "react";
-import {type ServerRequestInstance} from "./hooks.tsx";
+import {type ServerRequestInstance} from "./hooks/index.ts";
 import {decodeJwtToken, decodeUserInfosFromCookie, isUserInfoCookieUpdated, type UiUserInfos} from "./user.ts";
 import {deleteCookie} from "./cookies/index.ts";
 import * as jk_events from "jopi-toolkit/jk_events";
@@ -27,7 +27,8 @@ export interface PageOptions {
 export class PageController<T = any> implements ModuleInitContext_Host {
     private readonly isServerSide: boolean = isServerSide;
     private readonly usedKeys = new Set<String>();
-    protected state: PageOptions;
+
+    protected readonly state: PageOptions;
     protected serverRequest?: ServerRequestInstance;
     protected userInfos?: UiUserInfos;
 
@@ -79,16 +80,13 @@ export class PageController<T = any> implements ModuleInitContext_Host {
             if (!this.checkKey("h" + key)) return this;
             if (!this.state.head) this.state.head = [entry];
             else this.state.head.push(entry);
-        } else {
-            // No browser-side support.
-            // Why? Because React router only replaces the body.
         }
 
         return this;
     }
 
     public addToBodyBegin(key: string, entry: React.ReactNode) {
-        if (!this.checkKey("b" + key)) return this;
+        if (!this.checkKey("bb" + key)) return this;
 
         if (!this.state.bodyBegin) this.state.bodyBegin = [entry];
         else this.state.bodyBegin.push(entry);
@@ -99,7 +97,7 @@ export class PageController<T = any> implements ModuleInitContext_Host {
     }
 
     public addToBodyEnd(key: string, entry: React.ReactNode) {
-        if (!this.checkKey("e" + key)) return this;
+        if (!this.checkKey("be" + key)) return this;
 
         if (!this.state.bodyEnd) this.state.bodyEnd = [entry];
         else this.state.bodyEnd.push(entry);
