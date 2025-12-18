@@ -114,7 +114,7 @@ export * as routes from "./jBundler_ifServer.ts";
         srcCommon += `
 
 function renderRoute(name: string) {
-    let F = routes[name];
+    let F = (routes as any)[name];
     if (!F) F = () => _jsx("div", { children: \`Error 404: put a @routes\${name}/page.tsx file for personalizing it\` });
     return _jsx(F, {});
 }

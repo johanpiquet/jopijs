@@ -122,10 +122,11 @@ export class TypeTranslation extends AliasType {
         let res: Record<string, string> = {};
 
         for (let key in json) {
+            let key2 = key;
             let isPlural = key[0]==="*";
-            if (isPlural) key = key.substring(1);
+            if (isPlural) key2 = key.substring(1);
 
-            if (!this.isValidTypeScriptIdentifier(key)) {
+            if (!this.isValidTypeScriptIdentifier(key2)) {
                 let trFileKey = this.getTranslationFileShortName(filePath);
                 this.printError(`Translation file ${trFileKey}, key "${key}" is not a valid identifier`);
                 continue;
@@ -250,7 +251,7 @@ export class TypeTranslation extends AliasType {
     }
 
     private generateCodeFor(lang: string, def: Record<string, string>) {
-        //region Group the single and the plural
+        //region Group all the single and the plural
 
         let trSinglePlural: Record<string, TrSinglePlural> = {};
 
