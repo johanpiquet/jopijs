@@ -5,6 +5,7 @@ import {
     ModuleDirProcessor,
     resolveFile
 } from "./engine.ts";
+import {JopiModuleInfo} from "../@modules";
 
 /**
  * Search the uiInstall.ts and serverInstall.ts files
@@ -13,11 +14,11 @@ export default class ModInstaller extends ModuleDirProcessor {
     private uiInitFiles: string[] = [];
     private serverInitFiles: string[] = [];
 
-    override async onBeginModuleProcessing(_writer: CodeGenWriter, moduleDir: string): Promise<void> {
-        let uiInitFile = await resolveFile(moduleDir, ["uiInit.tsx", "uiInit.ts"]);
+    override async onBeginModuleProcessing(_writer: CodeGenWriter, module: JopiModuleInfo): Promise<void> {
+        let uiInitFile = await resolveFile(module.fullPath, ["uiInit.tsx", "uiInit.ts"]);
         if (uiInitFile) this.uiInitFiles.push(uiInitFile);
 
-        let serverInitFile = await resolveFile(moduleDir, ["serverInit.tsx", "serverInit.ts"]);
+        let serverInitFile = await resolveFile(module.fullPath, ["serverInit.tsx", "serverInit.ts"]);
         if (serverInitFile) this.serverInitFiles.push(serverInitFile);
     }
 

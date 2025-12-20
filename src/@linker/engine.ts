@@ -5,6 +5,8 @@ import * as jk_what from "jopi-toolkit/jk_what";
 import * as jk_events from "jopi-toolkit/jk_events";
 import * as jk_app from "jopi-toolkit/jk_app";
 import {PriorityLevel} from "jopi-toolkit/jk_tools";
+import {getModulesList, setModulesSourceDir} from "jopijs/modules";
+import {JopiModuleInfo} from "../@modules";
 export {PriorityLevel} from "jopi-toolkit/jk_tools";
 
 const LOG = false;
@@ -301,20 +303,18 @@ async function processProject() {
 }
 
 async function processAllModules() {
-    let modules = await jk_fs.listDir(gDir_ProjectSrc);
+    setModulesSourceDir(gDir_ProjectSrc);
+    let modules = await getModulesList();
 
-    for (let module of modules) {
-        if (!module.isDirectory) continue;
-        if (!module.name.startsWith("mod_")) continue;
-
+    for (let module of Object.values(modules)) {
         for (let p of gModuleDirProcessors) {
-            await p.onBeginModuleProcessing(gCodeGenWriter, module.fullPath);
+            await p.onBeginModuleProcessing(gCodeGenWriter, module);
         }
 
         await processThisModule(module.fullPath);
 
         for (let p of gModuleDirProcessors) {
-            await p.onEndModuleProcessing(gCodeGenWriter, module.fullPath);
+            await p.onEndModuleProcessing(gCodeGenWriter, module);
         }
     }
 }
@@ -827,11 +827,11 @@ export interface ExtractDirectoryInfosResult {
 }
 
 export class ModuleDirProcessor {
-    onBeginModuleProcessing(writer: CodeGenWriter, moduleDir: string): Promise<void> {
+    onBeginModuleProcessing(writer: CodeGenWriter, module: JopiModuleInfo): Promise<void> {
         return Promise.resolve();
     }
 
-    onEndModuleProcessing(writer: CodeGenWriter, moduleDir: string): Promise<void> {
+    onEndModuleProcessing(writer: CodeGenWriter, module: JopiModuleInfo): Promise<void> {
         return Promise.resolve();
     }
 
