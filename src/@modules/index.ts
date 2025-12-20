@@ -2,16 +2,40 @@ import * as jk_app from "jopi-toolkit/jk_app";
 import * as jk_fs from "jopi-toolkit/jk_fs";
 import * as jk_term from "jopi-toolkit/jk_term";
 
+interface IsPackageJson {
+    name?: string;
+    version?: string;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    workspaces?: string[];
+}
+
 export class JopiModuleInfo {
-    constructor(public readonly name: string, public readonly fullPath: string) {
+    readonly modName: string;
+    readonly modOrg?: string;
+
+    constructor(name: string, public readonly fullPath: string) {
+        if (name.startsWith("mod_")) this.modName = name.substring(4);
+
+        // Dir format for org is: mod_orgName@moduleName
+        //
+        if (name.includes("@")) {
+            let idx = name.indexOf("@");
+            this.modOrg = name.substring(0, idx);
+            name = name.substring(idx+1);
+        }
+
+        this.modName = name;
     }
 
     async checkPackageInfo() {
         const packageJsonFile = jk_fs.join(this.fullPath, "package.json");
 
-        if (!await jk_fs.isFile(packageJsonFile)) {
+        let pkgJson = await jk_fs.readJsonFromFile<IsPackageJson>(packageJsonFile);
+
+        if (!pkgJson) {
             const template = {
-                name: "jopimod_" + jk_fs.basename(this.name),
+                name: "jopimod_" + this.modName,
                 version: "0.0.1",
 
                 dependencies: {},
@@ -19,16 +43,41 @@ export class JopiModuleInfo {
             };
 
             await jk_fs.writeTextToFile(packageJsonFile, JSON.stringify(template, null, 4));
+        } else {
+            let mustSave = false;
+            let npmPkgName: string;
+
+            if (this.modOrg) {
+                npmPkgName = this.modOrg + "/jopimod_" + this.modName;
+            } else {
+                npmPkgName = "jopimod_" + this.modName;
+            }
+
+            if (!pkgJson.name || (pkgJson.name !== npmPkgName)) {
+                pkgJson.name = npmPkgName;
+                mustSave = true;
+            }
+
+            if (!pkgJson.version) {
+                pkgJson.version = "0.0.1";
+            }
+
+            if (mustSave) {
+                await jk_fs.writeTextToFile(packageJsonFile, JSON.stringify(pkgJson, null, 4));
+            }
         }
     }
 }
  
 export async function updateWorkspaces() {
     const modules = await getModulesList();
+
+    //region Check that all modules are inside the workspaces field of package.json
+
     const allModNames = Object.keys(modules);
     const pkjJsonFile = jk_fs.join(getProjectDir_src(), "..", "package.json");
 
-    let pkgJson = await jk_fs.readJsonFromFile<{workspaces?: string[]}>(pkjJsonFile);
+    let pkgJson = await jk_fs.readJsonFromFile<IsPackageJson>(pkjJsonFile);
     if(!pkgJson) pkgJson = {};
 
     //region Get workspace items
@@ -97,6 +146,16 @@ export async function updateWorkspaces() {
             onProjectDependenciesAdded();
         }
     }
+
+    //endregion
+
+    //region Check that all modules have a valid package.json
+
+    for (let module of Object.values(modules)) {
+        await module.checkPackageInfo()
+    }
+
+    //endregion
 }
 
 export async function getModulesList(): Promise<Record<string, JopiModuleInfo>> {

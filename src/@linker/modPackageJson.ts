@@ -14,7 +14,7 @@ export default class ModPackageJson extends ModuleDirProcessor {
         await module.checkPackageInfo();
     }
 
-    override async generateCode(writer: CodeGenWriter): Promise<void> {
-        updateWorkspaces();
+    override async generateCode(): Promise<void> {
+        await updateWorkspaces();
     }
 }
