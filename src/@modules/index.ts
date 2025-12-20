@@ -8,11 +8,17 @@ interface IsPackageJson {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
     workspaces?: string[];
+
+    jopi?: {
+        modDependencies?: string[];
+    };
 }
 
 export class JopiModuleInfo {
     readonly modName: string;
     readonly modOrg?: string;
+
+    private _npmName?: string;
 
     constructor(name: string, public readonly fullPath: string) {
         if (name.startsWith("mod_")) name = name.substring(4);
@@ -28,30 +34,103 @@ export class JopiModuleInfo {
         this.modName = name;
     }
 
-    async checkPackageInfo() {
-        const packageJsonFile = jk_fs.join(this.fullPath, "package.json");
+    get npmName(): string {
+        if (this._npmName) return this._npmName;
 
-        let pkgJson = await jk_fs.readJsonFromFile<IsPackageJson>(packageJsonFile);
+        if (this.modOrg) return this._npmName = "@" + this.modOrg + "/jopimod_" + this.modName;
+        return this._npmName = "jopimod_" + this.modName;
+    }
+
+    private _packageJson: IsPackageJson|undefined|null = null;
+
+    async getPackageJson(): Promise<IsPackageJson|undefined> {
+        if (this._packageJson) return this._packageJson;
+
+        const packageJsonFile = jk_fs.join(this.fullPath, "package.json");
+        return this._packageJson = await jk_fs.readJsonFromFile<IsPackageJson>(packageJsonFile);
+    }
+
+    async getModDependencies(): Promise<string[]> {
+        const append = (deps: string[]) => {
+            for (let d of deps) {
+                let c = this.cleanUpDependencyName(d);
+                if (c) allDeps.push(c);
+            }
+        }
+
+        let pkgJson = await this.getPackageJson();
+        if (!pkgJson) return [];
+
+        let allDeps: string[] = [];
+
+        if (pkgJson.jopi?.modDependencies) {
+            append(pkgJson.jopi.modDependencies);
+        }
+
+        if (pkgJson.dependencies) {
+            append(Object.keys(pkgJson.dependencies));
+        } else if (pkgJson.devDependencies) {
+            append(Object.keys(pkgJson.devDependencies));
+        }
+
+        return allDeps;
+    }
+
+    private cleanUpDependencyName(depName: string): string|undefined {
+        if (depName.startsWith("mod_")) {
+            depName = depName.substring(4);
+
+            let idx = depName.indexOf("@");
+            if (idx!==-1) return "jopimod_" + depName;
+
+            let modOrg = depName.substring(0, idx);
+            let modName = depName.substring(idx+1);
+
+            return "@" + modOrg + "/jopimod_" + modName;
+        }
+
+        let idx = depName.indexOf("@");
+
+        if (idx===0) {
+            let idx = depName.indexOf("/");
+            let modName = depName.substring(idx+1);
+            if (!modName.startsWith("jopimod_")) return undefined;
+            return depName;
+        } else if (idx===-1) {
+            if (!depName.startsWith("jopimod_")) return undefined;
+            return depName;
+        } else {
+            let modOrg = depName.substring(0, idx);
+            let modName = depName.substring(idx+1);
+
+            return "@" + modOrg + "/jopimod_" + modName;
+        }
+    }
+
+    async savePackageJson(newValue?: IsPackageJson): Promise<void> {
+        if (!newValue) {
+            if (this._packageJson) newValue = this._packageJson;
+            else return;
+        }
+
+        this._packageJson = newValue;
+        await jk_fs.writeTextToFile(jk_fs.join(this.fullPath, "package.json"), JSON.stringify(newValue, null, 4))
+    }
+
+    async checkPackageInfo() {
+        let pkgJson = await this.getPackageJson();
 
         if (!pkgJson) {
-            const template = {
+            await this.savePackageJson({
                 name: "jopimod_" + this.modName,
                 version: "0.0.1",
 
                 dependencies: {},
                 devDependencies: {}
-            };
-
-            await jk_fs.writeTextToFile(packageJsonFile, JSON.stringify(template, null, 4));
+            });
         } else {
             let mustSave = false;
-            let npmPkgName: string;
-
-            if (this.modOrg) {
-                npmPkgName = this.modOrg + "/jopimod_" + this.modName;
-            } else {
-                npmPkgName = "jopimod_" + this.modName;
-            }
+            const npmPkgName = this.npmName;
 
             if (!pkgJson.name || (pkgJson.name !== npmPkgName)) {
                 pkgJson.name = npmPkgName;
@@ -63,7 +142,19 @@ export class JopiModuleInfo {
             }
 
             if (mustSave) {
-                await jk_fs.writeTextToFile(packageJsonFile, JSON.stringify(pkgJson, null, 4));
+                await this.savePackageJson();
+            }
+        }
+
+        let allDeps = await this.getModDependencies();
+
+        if (allDeps.length) {
+            let modNames = Object.values(await getModulesList()).map(x => x.npmName);
+
+            for (let dep of allDeps) {
+                if (!modNames.includes(dep)) {
+                    console.log(`⚠️  Module ${jk_term.textBlue(this.modName)} has a dependency to ${jk_term.textRed(dep)} which doesn't exist.`);
+                }
             }
         }
     }
@@ -141,10 +232,6 @@ export async function updateWorkspaces() {
     if (needSavePkgJson) {
         pkgJson.workspaces = newWsItems;
         await jk_fs.writeTextToFile(pkjJsonFile, JSON.stringify(pkgJson, null, 4));
-
-        if (hasAddedWkItems) {
-            onProjectDependenciesAdded();
-        }
     }
 
     //endregion
@@ -156,9 +243,15 @@ export async function updateWorkspaces() {
     }
 
     //endregion
+
+    if (hasAddedWkItems) {
+        onProjectDependenciesAdded();
+    }
 }
 
 export async function getModulesList(): Promise<Record<string, JopiModuleInfo>> {
+    if (gModulesList) return gModulesList;
+
     const dirItems = await jk_fs.listDir(getProjectDir_src());
     let found: Record<string, JopiModuleInfo> = {};
 
@@ -168,7 +261,7 @@ export async function getModulesList(): Promise<Record<string, JopiModuleInfo>> 
         found[dirItem.name] = new JopiModuleInfo(dirItem.name, dirItem.fullPath);
     }
 
-    return found;
+    return gModulesList = found;
 }
 
 /**
@@ -207,3 +300,4 @@ export function setModulesSourceDir(dir: string) {
 }
 
 let gProjectDir_src: string|undefined;
+let gModulesList: Record<string, JopiModuleInfo>|undefined;
