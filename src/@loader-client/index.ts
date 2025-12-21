@@ -75,6 +75,12 @@ function sse_onChange() {
         console.log("SSE Event [/_jopirw_/bundler] : Refreshing browser");
         window.location.reload();
     });
+
+    // Avoid bug with Chrome when change page more than 6 times.
+    // It blocks because SSE events aren't closed du to Chrome page cache internal.
+    //
+    window.addEventListener('beforeunload', () => { event.close()  });
+    window.addEventListener('pagehide', () => { event.close() });
 }
 //
 let g_sse_onChange: string|undefined;
