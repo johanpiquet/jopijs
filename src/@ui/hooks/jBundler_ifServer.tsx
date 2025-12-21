@@ -6,6 +6,10 @@ import * as jk_events from "jopi-toolkit/jk_events";
 import type {CookieOptions} from "../cookies/index.ts";
 import {_usePage, type ReactStaticEvent} from "./common.tsx";
 
+export function useParams(): any {
+    return useServerRequest().urlParts;
+}
+
 /**
  * Is the same as React.useEffect, but is executed even on the server side.
  *

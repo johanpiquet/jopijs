@@ -38,7 +38,7 @@ export class UiApplication {
     public readonly isBrowserSide: boolean = !isServerSide;
     protected readonly host: UiApplication_Host;
 
-    constructor(host?: UiApplication_Host) {
+    constructor(host?: UiApplication_Host, extra?: ExtraPageParams|undefined) {
         gDefaultUiApplication = this;
 
         if (!host) host = getDefaultPageController();
@@ -47,16 +47,22 @@ export class UiApplication {
         this.objectRegistry = host.objectRegistry;
         this.events = host.events;
 
+        if (extra) {
+            for (let key in extra) {
+                this.objectRegistry.registerObject("jopi.server." + key, (extra as any)[key]);
+            }
+        }
+
         this.initialize();
     }
 
     protected initialize() {
         // Will be overridden.
     }
-
     protected finalize() {
 
     }
+
 
     get mustRemoveTrailingSlashes() {
         return this.host.mustRemoveTrailingSlashes = true;

@@ -4,6 +4,27 @@ import React, {useEffect} from "react";
 import * as jk_events from "jopi-toolkit/jk_events";
 import {type ReactStaticEvent} from "./common.tsx";
 
+export function useParams(): any {
+    if (gPageParams===undefined) {
+        let pathname = new URL(window.location.href).pathname;
+        let route = ((window as any)["__JOPI_ROUTE__"]) as string;
+        if (!route) return gPageParams = {};
+
+        let pRoute = route.split("/");
+        let pPathname = pathname.split("/");
+        gPageParams = {};
+
+        for (let i = 0; i < pRoute.length; i++) {
+            let p = pRoute[i];
+            if (p[0]===":") gPageParams[p.substring(1)] = pPathname[i];
+        }
+    }
+
+    return gPageParams;
+}
+
+let gPageParams: any|undefined;
+
 /**
  * useStaticEffect is the same as React.useEffect, but is executed even on the server side.
  *
