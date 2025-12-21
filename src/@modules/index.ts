@@ -14,34 +14,11 @@ interface IsPackageJson {
     };
 }
 
-export class JopiModuleInfo {
-    readonly modName: string;
-    readonly modOrg?: string;
-
-    private _npmName?: string;
-
-    constructor(name: string, public readonly fullPath: string) {
-        if (name.startsWith("mod_")) name = name.substring(4);
-
-        // Dir format for org is: mod_orgName@moduleName
-        //
-        if (name.includes("@")) {
-            let idx = name.indexOf("@");
-            this.modOrg = name.substring(0, idx);
-            name = name.substring(idx+1);
-        }
-
-        this.modName = name;
+class JopiItemInfo {
+    constructor(public readonly fullPath: string) {
     }
 
-    get npmName(): string {
-        if (this._npmName) return this._npmName;
-
-        if (this.modOrg) return this._npmName = "@" + this.modOrg + "/jopimod_" + this.modName;
-        return this._npmName = "jopimod_" + this.modName;
-    }
-
-    private _packageJson: IsPackageJson|undefined|null = null;
+    protected _packageJson: IsPackageJson|undefined|null = null;
 
     async getPackageJson(): Promise<IsPackageJson|undefined> {
         if (this._packageJson) return this._packageJson;
@@ -51,40 +28,9 @@ export class JopiModuleInfo {
     }
 
     async getModDependencies(): Promise<string[]> {
-        function cleanUpDependencyName(depName: string): string|undefined {
-            if (depName.startsWith("mod_")) {
-                depName = depName.substring(4);
-
-                let idx = depName.indexOf("@");
-                if (idx!==-1) return "jopimod_" + depName;
-
-                let modOrg = depName.substring(0, idx);
-                let modName = depName.substring(idx+1);
-
-                return "@" + modOrg + "/jopimod_" + modName;
-            }
-
-            let idx = depName.indexOf("@");
-
-            if (idx===0) {
-                let idx = depName.indexOf("/");
-                let modName = depName.substring(idx+1);
-                if (!modName.startsWith("jopimod_")) return undefined;
-                return depName;
-            } else if (idx===-1) {
-                if (!depName.startsWith("jopimod_")) return undefined;
-                return depName;
-            } else {
-                let modOrg = depName.substring(0, idx);
-                let modName = depName.substring(idx+1);
-
-                return "@" + modOrg + "/jopimod_" + modName;
-            }
-        }
-
         function append (deps: string[]) {
             for (let d of deps) {
-                let c = cleanUpDependencyName(d);
+                let c = toNpmModuleName(d);
                 if (c) allDeps.push(c);
             }
         }
@@ -107,14 +53,6 @@ export class JopiModuleInfo {
         return allDeps;
     }
 
-    async removeNodeModulesDir() {
-        let dir = jk_fs.join(this.fullPath, "node_modules");
-
-        if (await jk_fs.isDirectory(dir)) {
-            await jk_fs.rmDir(dir);
-        }
-    }
-
     async savePackageJson(newValue?: IsPackageJson): Promise<void> {
         if (!newValue) {
             if (this._packageJson) newValue = this._packageJson;
@@ -123,6 +61,49 @@ export class JopiModuleInfo {
 
         this._packageJson = newValue;
         await jk_fs.writeTextToFile(jk_fs.join(this.fullPath, "package.json"), JSON.stringify(newValue, null, 4))
+    }
+}
+
+export class JopiProjectInfo extends JopiItemInfo {
+    constructor(fullPath: string) {
+        super(fullPath);
+    }
+}
+
+export class JopiModuleInfo extends JopiItemInfo {
+    readonly modName: string;
+    readonly modOrg?: string;
+    private _npmName?: string;
+
+    constructor(name: string, public readonly fullPath: string) {
+        super(fullPath);
+
+        if (name.startsWith("mod_")) name = name.substring(4);
+
+        // Dir format for org is: mod_orgName@moduleName
+        //
+        if (name.includes("@")) {
+            let idx = name.indexOf("@");
+            this.modOrg = name.substring(0, idx);
+            name = name.substring(idx+1);
+        }
+
+        this.modName = name;
+    }
+
+    get npmName(): string {
+        if (this._npmName) return this._npmName;
+
+        if (this.modOrg) return this._npmName = "@" + this.modOrg + "/jopimod_" + this.modName;
+        return this._npmName = "jopimod_" + this.modName;
+    }
+
+    async removeNodeModulesDir() {
+        let dir = jk_fs.join(this.fullPath, "node_modules");
+
+        if (await jk_fs.isDirectory(dir)) {
+            await jk_fs.rmDir(dir);
+        }
     }
 
     async checkPackageInfo() {
@@ -166,6 +147,81 @@ export class JopiModuleInfo {
             }
         }
     }
+}
+
+/**
+ * Convert the name of a module to a valid npm format.
+ *
+ * @param itemName The name of the module.
+ *      Accepted formats are:
+ *      - mod_???
+ *      - mod_orgName@modName
+ *      - @orgName/jopimod_modName
+ *      - jopimod_modName
+ *
+ * @returns
+ *      A valid npm module name or undefined if the name is not valid.
+ */
+export function toNpmModuleName(itemName: string): string|undefined {
+    if (itemName.startsWith("mod_")) {
+        itemName = itemName.substring(4);
+
+        let idx = itemName.indexOf("@");
+        if (idx!==-1) return "jopimod_" + itemName;
+
+        let modOrg = itemName.substring(0, idx);
+        let modName = itemName.substring(idx+1);
+
+        return "@" + modOrg + "/jopimod_" + modName;
+    }
+
+    let idx = itemName.indexOf("@");
+
+    if (idx===0) {
+        let idx = itemName.indexOf("/");
+        let modName = itemName.substring(idx+1);
+        if (!modName.startsWith("jopimod_")) return undefined;
+        return itemName;
+    } else if (idx===-1) {
+        if (!itemName.startsWith("jopimod_")) return undefined;
+        return itemName;
+    } else {
+        let modOrg = itemName.substring(0, idx);
+        let modName = itemName.substring(idx+1);
+
+        return "@" + modOrg + "/jopimod_" + modName;
+    }
+}
+
+/**
+ * Convert the name of a module to the name of the directory where it is stored.
+ *
+ * @param itemName The name of the module.
+ *      Accepted formats are:
+ *      - mod_???
+ *      - mod_orgName@modName
+ *      - @orgName/jopimod_modName
+ *      - jopimod_modName
+ *
+ * @returns
+ *      A valid module dit name or undefined if the name is not valid.
+ */
+export function toModDirName(itemName: string): string|undefined {
+    if (itemName.startsWith("mod_")) {
+        return itemName;
+    } else if (itemName.startsWith("jopimod_")) {
+        return itemName.substring(4);
+    }
+
+    if (itemName[0]!=="@") return undefined;
+
+    let idx = itemName.indexOf("/");
+    if (idx===-1) return undefined;
+
+    let org = itemName.substring(1, idx);
+    let modName = itemName.substring(idx+9);
+
+    return "mod_" + org + "@" + modName;
 }
 
 /**
