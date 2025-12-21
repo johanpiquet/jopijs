@@ -61,7 +61,7 @@ Each module can also have a `uiInit.ts` file. It is called each time the server 
 import {UiKitModule, MenuName} from "jopijs/uikit";
 import {isBrowser} from "jopi-toolkit/jk_what";
 
-// Note: the default class received is "ModuleInitContext"
+// Note: the default class received is "UiApplication"
 // but ui-kit overrides the creation step to provide an
 // instance of UiKitModule.
 //

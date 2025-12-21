@@ -5,7 +5,7 @@ import {type ServerRequestInstance} from "./hooks/index.ts";
 import {decodeJwtToken, decodeUserInfosFromCookie, isUserInfoCookieUpdated, type UiUserInfos} from "./user.ts";
 import {deleteCookie} from "./cookies/index.ts";
 import * as jk_events from "jopi-toolkit/jk_events";
-import type {ModuleInitContext_Host} from "./modules.ts";
+import type {UiApplication_Host} from "./modules.ts";
 import {isServerSide} from "jopi-toolkit/jk_what";
 import {getDefaultObjectRegistry, type IsObjectRegistry, ObjectRegistry} from "./objectRegistry.ts";
 
@@ -24,7 +24,7 @@ export interface PageOptions {
  * Page controller is an object that can be accessed
  * from any React component from the `_usePage`hook.
  */
-export class PageController<T = any> implements ModuleInitContext_Host {
+export class PageController<T = any> implements UiApplication_Host {
     private readonly isServerSide: boolean = isServerSide;
     private readonly usedKeys = new Set<String>();
 
@@ -46,7 +46,7 @@ export class PageController<T = any> implements ModuleInitContext_Host {
      */
     data: T = {} as unknown as T;
 
-    //region ModuleInitContext_Host
+    //region UiApplication_Host
 
     /**
      * Return the current page url.

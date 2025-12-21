@@ -1,11 +1,11 @@
 import {type InstallFunction, loadServerInstall, getBrowserInstallFunction, getDefaultLinkerConfig, compile} from "jopijs/linker";
-import {ModuleInitContext} from "jopijs/ui";
+import {UiApplication} from "jopijs/ui";
 import * as jk_events from "jopi-toolkit/jk_events";
 import {JopiEasyWebSite, type WebSite} from "jopijs";
 import {logServer_linker} from "./_logs.ts";
 import {DontCallBeforeElapsed} from "jopi-toolkit/jk_tools";
 
-let gBrowserInstallFunction: InstallFunction<ModuleInitContext>;
+let gBrowserInstallFunction: InstallFunction<UiApplication>;
 let gIsInit = false;
 
 export async function initLinker(webSite: JopiEasyWebSite, onWebSiteCreate: (h: (webSite: WebSite) => void|Promise<void>) => void) {
@@ -21,7 +21,7 @@ export async function initLinker(webSite: JopiEasyWebSite, onWebSiteCreate: (h: 
     await loadServerInstall(webSite, onWebSiteCreate);
 }
 
-export function executeBrowserInstall(ctx: ModuleInitContext) {
+export function executeBrowserInstall(ctx: UiApplication) {
     if (!gIsInit) return;
     gBrowserInstallFunction(ctx);
 }

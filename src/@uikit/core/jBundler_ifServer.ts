@@ -4,11 +4,11 @@ import {UiKitModule} from "./UiKitModule.ts";
 
 /**
  * Must be called manually from the server-side init to enable UiKit.
- * This will allow replacing the instance of ModuleInitContext
+ * This will allow replacing the instance of UiApplication
  * by an instance of UiKitModule.
  */
 export function registerUiKit() {
-    // We want to replace the creation of the object ModuleInitContext
+    // We want to replace the creation of the object UiApplication
     // with our own implementation, which extend the core functionalities.
     //
     jk_event.addListener<WebSite>("jopi.server.install.done", (webSite) => {

@@ -11,8 +11,8 @@ import React from "react";
 import {
     type MenuItemForExtraPageParams,
     type ExtraPageParams,
-    ModuleInitContext,
-    type ModuleInitContext_Host,
+    UiApplication,
+    type UiApplication_Host,
     PageController,
     type UiUserInfos
 } from "jopijs/ui";
@@ -566,13 +566,13 @@ export class WebSiteImpl implements WebSite {
      * Allow overriding the instance used by modules 'uiInit.tsx' files.
      * @param builder
      */
-    setModuleInitClassInstanceBuilder(builder: (host: ModuleInitContext_Host, extraParams: ExtraPageParams) =>  ModuleInitContext) {
+    setModuleInitClassInstanceBuilder(builder: (host: UiApplication_Host, extraParams: ExtraPageParams) =>  UiApplication) {
         this.createModuleInitInstance = builder;
     }
 
-    private createModuleInitInstance(pageController: ModuleInitContext_Host, _extraParams: any): ModuleInitContext {
+    private createModuleInitInstance(pageController: UiApplication_Host, _extraParams: any): UiApplication {
         // Note: this function will be replaced.
-        return new ModuleInitContext(pageController);
+        return new UiApplication(pageController);
     }
 
     //endregion

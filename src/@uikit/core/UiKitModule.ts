@@ -1,16 +1,16 @@
 import {
     type MenuItemForExtraPageParams,
     type ExtraPageParams,
-    ModuleInitContext,
-    type ModuleInitContext_Host
+    UiApplication,
+    type UiApplication_Host
 } from "jopijs/ui";
 import {MenuManager, MenuOverride} from "../menu/index.ts";
 import {getDefaultMenuManager} from "../menu/internal.ts";
 
-export class UiKitModule extends ModuleInitContext {
+export class UiKitModule extends UiApplication {
     private extraPageParams?: ExtraPageParams;
 
-    constructor(host: ModuleInitContext_Host|undefined, extra: ExtraPageParams|undefined) {
+    constructor(host: UiApplication_Host|undefined, extra: ExtraPageParams|undefined) {
         super(host);
         this.extraPageParams = extra;
     }

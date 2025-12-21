@@ -68,7 +68,7 @@ This file is called for each page render. It is called on the server side when i
 ```typescript jsx
 import {UiKitModule, MenuName} from "jopijs/uikit";  
   
-// myModule is of type ModuleInitContext.
+// myModule is of type UiApplication.
 // But is upgradedto UiKitModule if you use
 // uiKit features, which is near always the case.
 //

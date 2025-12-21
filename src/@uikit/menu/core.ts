@@ -1,7 +1,7 @@
 import React from "react";
 import {ucFirst} from "../helpers/index.ts";
 import type {MenuTree} from "./interfaces.ts";
-import {ModuleInitContext} from "jopijs/ui";
+import {UiApplication} from "jopijs/ui";
 import * as jk_events from "jopi-toolkit/jk_events";
 
 class MenuTreeBuilder {
@@ -141,7 +141,7 @@ export class MenuManager {
     private allMenus: Record<string, MenuTreeBuilder> = {};
     private readonly menuBuilders: Record<string, MenuBuilder[]> = {};
 
-    constructor(private readonly module: ModuleInitContext,
+    constructor(private readonly module: UiApplication,
                 public readonly mustRemoveTrailingSlashes: boolean,
                 private readonly forceURL?: URL)
     {
