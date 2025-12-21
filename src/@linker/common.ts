@@ -1,5 +1,8 @@
 import {declareLinkerError} from "./engine.ts";
-import {ucFirst} from "jopijs/uikit";
+
+function ucFirst(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 export function normalizeNeedRoleConditionName(condName: string, filePath: string, ctx: any|undefined, acceptedTargets: string[]): string|undefined {
     let needRoleIdx = condName.toLowerCase().indexOf("needrole");
