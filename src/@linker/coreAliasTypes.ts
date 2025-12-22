@@ -329,9 +329,7 @@ export class TypeInDirChunk extends AliasType {
         });
     }
 
-    async generateCodeForItem(writer: CodeGenWriter, key: string, rItem: RegistryItem) {
-        const item = rItem as TypeInDirChunk_Item;
-
+    async generateCodeForItem(writer: CodeGenWriter, key: string, item: TypeInDirChunk_Item) {
         let targetName = key.substring(key.indexOf("!") + 1);
         let outDir = jk_fs.join(writer.dir.output_src, this.getGenOutputDir(item));
         let entryPoint = jk_fs.getRelativePath(outDir, item.entryPoint);
