@@ -40,9 +40,10 @@ export function getDefaultLinkerConfig(): LinkerConfig {
 
             new TypeInDirChunk("ui"),
             new TypeInDirChunk("schemes"),
-            new TypeLib("lib"),
             new TypeInDirChunk("hooks"),
+            new TypeInDirChunk("res"),
             //
+            new TypeLib("lib"),
             new TypeUiComposite("uiComposites"),
             new TypeEvents("events"),
             new TypeTable("tables"),
