@@ -1,6 +1,6 @@
 // noinspection JSUnusedGlobalSymbols
 
-import {JopiRequest} from "./jopiRequest.tsx";
+import {JopiRequest, JopiRequestImpl} from "./jopiRequest.tsx";
 import {ServerFetch} from "./serverFetch.ts";
 import {LoadBalancer} from "./loadBalancing.ts";
 import {type CoreServer, type SseEvent, type WebSocketConnectionInfos} from "./jopiServer.ts";
@@ -173,17 +173,11 @@ export interface CacheRules {
      * Define a function which is called before checking the cache.
      * This allows doing some checking, and if needed, it can return
      * a response and bypass the request cycle.
-     *
-     * !! Warning !!
-     * You will have to sanitize yourself the url or call manually `req.req_clearSearchParamsAndHash`.
      */
     beforeCheckingCache?: (req: JopiRequest) => Promise<Response | undefined | void>;
 
     /**
      * Define a function which is called when the response is not in the cache.
-     *
-     * !! Warning !!
-     * Defining this function disables the automatic call to `req.user_fakeNoUsers()`.
      */
     ifNotInCache(req: JopiRequest, isPage: boolean): void;
 }
@@ -457,11 +451,17 @@ export class WebSiteImpl implements WebSite {
                         if (r) {
                             return fPostMiddleware ? fPostMiddleware(req, r) : r;
                         }
-                    } else if (isPage) {
-                        // Remove the search params and the href
-                        // for security reasons to avoid cache poisoning.
-                        //
-                        req.req_clearSearchParamsAndHash();
+                    }
+
+                    if (isPage) {
+                        if ((req as JopiRequestImpl)._cache_ignoreDefaultBehaviors) {
+                            (req as JopiRequestImpl)._cache_ignoreDefaultBehaviors = false;
+                        } else {
+                            // Remove the search params and the href
+                            // for security reasons to avoid cache poisoning.
+                            //
+                            req.req_clearSearchParamsAndHash();
+                        }
                     }
 
                     let res = await req.cache_getFromCache();
@@ -482,9 +482,15 @@ export class WebSiteImpl implements WebSite {
 
                     if (ifNotInCache) {
                         ifNotInCache(req, isPage);
-                    } else if (isPage) {
-                        // Allows creating anonymous pages.
-                        req.user_fakeNoUsers();
+                    }
+
+                    if (isPage) {
+                        if ((req as JopiRequestImpl)._cache_ignoreDefaultBehaviors) {
+                            (req as JopiRequestImpl)._cache_ignoreDefaultBehaviors = false;
+                        } else {
+                            // Allows creating anonymous pages.
+                            req.user_fakeNoUsers();
+                        }
                     }
 
                     // > Here we bypass the default workflow.
@@ -728,7 +734,7 @@ export class WebSiteImpl implements WebSite {
         // For security reasons. Without that, an attacker can break a cache.
         if (urlInfos) urlInfos.hash = "";
 
-        const req = new JopiRequest(this, urlInfos, coreRequest, coreServer, routeInfos!);
+        const req = new JopiRequestImpl(this, urlInfos, coreRequest, coreServer, routeInfos!);
         req.urlParts = urlParts;
 
         const endReq = logServer_request.beginInfo((w) => w(`${req.method} request`, {url: req.url }));

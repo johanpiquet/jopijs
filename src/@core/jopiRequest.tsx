@@ -459,7 +459,13 @@ export class JopiRequest {
 
     //region Cache
 
-    private _isAddedToCache = false;
+    protected _isAddedToCache = false;
+    protected _cache_ignoreDefaultBehaviors = false;
+
+    cache_ignoreDefaultBehaviors() {
+        this._cache_ignoreDefaultBehaviors = true;
+    }
+
 
     /**
      * Get from the cache the entry corresponding to the current url.
@@ -1276,6 +1282,10 @@ export class JopiRequest {
     }
 
     //endregion
+}
+
+export class JopiRequestImpl extends JopiRequest {
+    public _cache_ignoreDefaultBehaviors = false;
 }
 
 export interface JopiRequestSpyData {
