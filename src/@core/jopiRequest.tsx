@@ -1111,11 +1111,37 @@ export class JopiRequest {
     }
 
     /**
+     * Test if the user has at this required role.
+     * @returns
+     * - true if the user has this required role.
+     * - false if not.
+     */
+    public role_userHasRole(requiredRole: string): boolean {
+        const userInfos = this.user_getUserInfos();
+        if (!userInfos) return false;
+
+        const userRoles = userInfos.roles;
+        if (!userRoles) return false;
+
+        return userRoles.includes(requiredRole);
+    }
+
+    /**
      * Test if the user has at least one of the required roles.
      * If not, will directly return a 401 error.
      */
     public role_assertUserHasRoles(requiredRoles: string[]) {
         if (!this.role_userHasRoles(requiredRoles)) {
+            throw new SBPE_NotAuthorizedException();
+        }
+    }
+
+    /**
+     * Test if the user has this required role.
+     * If not, will directly return a 401 error.
+     */
+    public role_assertUserHasRole(requiredRole: string) {
+        if (!this.role_userHasRole(requiredRole)) {
             throw new SBPE_NotAuthorizedException();
         }
     }
