@@ -773,7 +773,10 @@ export class WebSiteImpl implements WebSite {
                     }
                 } else if (e instanceof SBPE_NotAuthorizedException) {
                     return req.res_returnError401_Unauthorized();
-                } else if (e instanceof SBPE_MustReturnWithoutResponseException) {
+                } else if (e instanceof SBPE_ErrorPage) {
+                    return await e.apply(this, req);
+                }
+                else if (e instanceof SBPE_MustReturnWithoutResponseException) {
                     return undefined;
                 }
             }
@@ -1059,6 +1062,29 @@ export type JopiMiddleware = (req: JopiRequest) => Response | Promise<Response|n
 export type JopiPostMiddleware = (req: JopiRequest, res: Response) => Response | Promise<Response>;
 
 export class SBPE_ServerByPassException extends Error {
+}
+
+export class SBPE_ErrorPage extends SBPE_ServerByPassException {
+    constructor(public readonly code: number) {
+        super("error");
+    }
+
+    async apply(webSite: WebSite, req: JopiRequest): Promise<Response> {
+        try {
+            switch (this.code) {
+                case 404:
+                    return webSite.return404(req);
+                case 500:
+                    return webSite.return500(req);
+                case 401:
+                    return webSite.return401(req);
+            }
+        }
+        catch {
+        }
+
+        return webSite.return500(req);
+    }
 }
 
 export class SBPE_NotAuthorizedException extends SBPE_ServerByPassException {

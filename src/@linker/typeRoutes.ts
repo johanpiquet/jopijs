@@ -93,19 +93,20 @@ export default class TypeRoutes extends AliasType {
         writer.genAddToInstallFile(InstallFileType.server, FilePart.footer, "\n    onWebSiteCreated((webSite) => declareRoutes(webSite));");
     }
 
+    /**
+     * Generate the file _jopiLinkerGen/routes/index.ts
+     */
     private async genCode_AliasRoutes(writer: CodeGenWriter) {
         const myDir = jk_fs.join(writer.dir.output_src, "routes");
 
-        const generateRoutes = (browserSide: boolean) => {
+        const generateRoutes = (sources: { header: string, body: string }, browserSide: boolean, forJavaScript: boolean) => {
+            if (browserSide) sources.header += `import React from "react";\n\n`;
+            else sources.header += "\n";
+
             // For: import routes from "@/routes";
             // Export a map url --> page component.
             //
-            let srcRouteFiles =
-                `import React from "react";
-
-export default {`;
-
-            let headers = writer.AI_INSTRUCTIONS;
+            sources.body += "\nconst routes = {";
             let count = 0;
 
             const registryValues = Object.values(this.registry);
@@ -115,13 +116,13 @@ export default {`;
                     count++;
 
                     let relPath = jk_fs.getRelativePath(myDir, item.filePath);
-                    relPath = writer.toPathForImport(relPath, false);
+                    relPath = writer.toPathForImport(relPath, forJavaScript);
 
                     if (browserSide) {
-                        srcRouteFiles += `\n    "${item.route}": React.lazy(() => import(${JSON.stringify(relPath)})),`;
+                        sources.body += `\n    "${item.route}": React.lazy(() => import(${JSON.stringify(relPath)})),`;
                     } else {
-                        headers += `import I${count} from ${JSON.stringify(relPath)};\n`;
-                        srcRouteFiles += `\n    "${item.route}": I${count},`;
+                        sources.header += `import I${count} from ${JSON.stringify(relPath)};\n`;
+                        sources.body += `\n    "${item.route}": I${count},`;
                         this.bindPage(writer, item.route, item.filePath, item.attributes);
                     }
                 } else {
@@ -131,27 +132,83 @@ export default {`;
                 }
             }
 
-            srcRouteFiles += "\n};";
+            sources.body += "\n};\n\nexport default routes;";
 
-            return headers + srcRouteFiles;
+            if (!browserSide) {
+                sources.header += "\n";
+            }
         }
 
-        const routesBrowserSide = generateRoutes(true);
+        //region Common
 
-        let srcCommon =
-`import { jsx as _jsx } from "react/jsx-runtime";
-import routes from "./jBundler_ifServer.ts";
-export * as routes from "./jBundler_ifServer.ts";
-`;
+        let commonTS = {
+            header:  writer.AI_INSTRUCTIONS + `import { jsx as _jsx } from "react/jsx-runtime";\n`,
+            body: ""
+        }
+        ;
+        let commonJS = {...commonTS};
 
-        srcCommon += `
-
-function renderRoute(name: string) {
+        commonTS.body += `function renderRoute(name: string) {
     let F = (routes as any)[name];
     if (!F) F = () => _jsx("div", { children: \`Error 404: put a @routes\${name}/page.tsx file for personalizing it\` });
     return _jsx(F, {});
 }
+`;
 
+        commonJS.body += `function renderRoute(name) {
+    let F = routes[name];
+    if (!F) F = () => _jsx("div", { children: \`Error 404: put a @routes\${name}/page.tsx file for personalizing it\` });
+    return _jsx(F, {});
+}
+`;
+
+        //endregion
+
+        //region jBundler_ifServer.ts/.js
+
+        {
+            // This error pages function allows bypassing the cache on sever-side.
+            //
+            let exportErrors = `
+export function error404() {
+    throw new SBPE_ErrorPage(404);
+}
+
+export function error500() {
+   throw new SBPE_ErrorPage(500);
+}
+
+export function error401() {
+    throw new SBPE_ErrorPage(401);
+}
+`;
+
+            let sourcesTS = {...commonTS};
+            let sourcesJS = {...commonJS};
+
+            sourcesTS.header += `import { SBPE_ErrorPage } from "jopijs";\n`;
+            sourcesJS.header += `import { SBPE_ErrorPage } from "jopijs";\n`;
+
+            sourcesTS.body += exportErrors;
+            sourcesJS.body += exportErrors;
+
+            generateRoutes(sourcesTS, false, false);
+            generateRoutes(sourcesJS, false, true);
+
+            await writer.writeCodeFile({
+                fileInnerPath: jk_fs.join("routes", "jBundler_ifServer"),
+                srcFileContent: sourcesTS.header + sourcesTS.body,
+                distFileContent: sourcesJS.header + sourcesJS.body,
+            });
+        }
+
+        //endregion
+
+        //region jBundler_ifBrowser.ts/.js
+
+        {
+            // On the browser side, render directly.
+            let exportErrors = `
 export function error404() {
     return renderRoute("/error404");
 }
@@ -162,26 +219,31 @@ export function error500() {
 
 export function error401() {
     return renderRoute("/error401");
-}`;
+}
+`;
+
+            let sourcesTS = {...commonTS};
+            let sourcesJS = {...commonJS};
+
+            sourcesTS.body += exportErrors;
+            sourcesJS.body += exportErrors;
+
+            generateRoutes(sourcesTS, true, false);
+            generateRoutes(sourcesJS, true, true);
+
+            await writer.writeCodeFile({
+                fileInnerPath: jk_fs.join("routes", "jBundler_ifBrowser"),
+                srcFileContent: sourcesTS.header + sourcesTS.body,
+                distFileContent: sourcesJS.header + sourcesJS.body,
+            });
+        }
+
+        //endregion
 
         await writer.writeCodeFile({
             fileInnerPath: jk_fs.join("routes", "index"),
-            srcFileContent: srcCommon,
-            distFileContent: srcCommon
-        });
-
-        await writer.writeCodeFile({
-            fileInnerPath: jk_fs.join("routes", "jBundler_ifBrowser"),
-            srcFileContent: routesBrowserSide,
-            distFileContent: routesBrowserSide
-        });
-
-        const routesServerSide = generateRoutes(false);
-
-        await writer.writeCodeFile({
-            fileInnerPath: jk_fs.join("routes", "jBundler_ifServer"),
-            srcFileContent: routesServerSide,
-            distFileContent: routesServerSide
+            srcFileContent: `export * from "./jBundler_ifServer.ts";`,
+            distFileContent: `export * from "./jBundler_ifServer.js";`,
         });
     }
 
