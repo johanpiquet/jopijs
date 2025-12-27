@@ -4,6 +4,7 @@ import type {JopiRequest} from "../jopiRequest";
 import fs from "node:fs/promises";
 import {makeIterable} from "../internalTools.ts";
 import type {CacheEntry, PageCache} from "./cache.ts";
+import {SBPE_NotAuthorizedException} from "../jopiWebSite.tsx";
 
 export class WebSiteMirrorCache implements PageCache {
     public readonly rootDir: string;
@@ -12,13 +13,24 @@ export class WebSiteMirrorCache implements PageCache {
     constructor(rootDir: string) {
         if (!rootDir) rootDir = ".";
         if (!path.isAbsolute(rootDir)) rootDir = path.resolve(process.cwd(), rootDir);
+        else rootDir = jk_fs.resolve(rootDir);
+
         this.rootDir = rootDir;
         this.rootDirAtFileUrl = jk_fs.pathToFileURL(this.rootDir).href;
     }
 
     private calKey(url: URL): string {
-        let sURL = this.rootDirAtFileUrl + url.pathname;
-        return jk_fs.fileURLToPath(sURL);
+        let pathName = url.pathname;
+        if (pathName.includes("..")) throw new SBPE_NotAuthorizedException();
+
+        const sURL = this.rootDirAtFileUrl + pathName;
+        let result = jk_fs.resolve(jk_fs.fileURLToPath(sURL));
+
+        if (!result.startsWith(this.rootDir)) {
+            throw new SBPE_NotAuthorizedException();
+        }
+
+        return result;
     }
 
     private calcFilePath(url: URL): string {
