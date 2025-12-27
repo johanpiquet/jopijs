@@ -85,6 +85,10 @@
       "bun": "./src/@bundler/index.ts",
       "default": "./dist/@bundler/index.js"
     },
+    "./postcss": {
+      "bun": "./src/@postcss/index.ts",
+      "default": "./dist/@postcss/index.js"
+    },
     "./crawler": {
       "bun": "./src/@crawler/index.ts",
       "default": "./dist/@crawler/index.js"

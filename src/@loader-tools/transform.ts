@@ -1,4 +1,4 @@
-import cssModuleCompiler from "./cssModuleCompiler.ts";
+import {compileCssModule} from "jopijs/postcss";
 import {supportedExtensionToType} from "./rules.ts";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -44,7 +44,7 @@ export async function transformFile(filePath: string, options: string): Promise<
 }
 
 async function transform_cssModule(sourceFilePath: string) {
-    return await cssModuleCompiler(sourceFilePath);
+    return await compileCssModule(sourceFilePath);
 }
 
 /**

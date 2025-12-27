@@ -11,7 +11,7 @@ import * as jk_fs from "jopi-toolkit/jk_fs";
 /**
  * Compile a CSS or SCSS file to a JavaScript file.
  */
-export default async function compileCssModule(filePath: string): Promise<string> {
+export async function compileCssModule(filePath: string): Promise<string> {
     // Occurs when it's compiled with TypeScript.
     if (!await jk_fs.isFile(filePath)) {
         let source = jk_app.searchSourceOf(filePath)!;
@@ -70,7 +70,7 @@ export default async function compileCssModule(filePath: string): Promise<string
     return `export default ${JSON.stringify(knownClassNames)};`
 }
 
-export function scssToCss(filePath: string): any {
+function scssToCss(filePath: string): any {
     const res = sass.compile(filePath, { style: 'expanded' });
     return res.css.toString();
 }

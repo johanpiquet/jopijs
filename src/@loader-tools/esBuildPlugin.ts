@@ -1,4 +1,4 @@
-import cssModuleCompiler from "./cssModuleCompiler.ts";
+import {compileCssModule} from "jopijs/postcss";
 import {transformFile} from "./transform.ts";
 import {getPackageJsonConfig} from "./config.ts";
 import path from "node:path";
@@ -15,7 +15,7 @@ interface JopiRawContent {
 }
 
 async function processCssModule(path: string) {
-    let jsSource = await cssModuleCompiler(path);
+    let jsSource = await compileCssModule(path);
 
     return {
         contents: jsSource,
