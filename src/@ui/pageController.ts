@@ -88,12 +88,14 @@ export class PageController<T = any> implements UiApplication_Host {
             if (!this.state.head) this.state.head = [entry];
             else this.state.head.push(entry);
         } else if (this.isReactHMR) {
-            if (!document?.head) return this;
+            // >>> With React HMR there is not server pre-rendering.
+            //     It's why here we allow injecting items into the header.
+
             const element = React.isValidElement(entry) ? entry : React.createElement(React.Fragment, null, entry);
             const container = document.createElement('div');
-            container.setAttribute('data-header-key', key);
+            container.setAttribute('data-jopi-key', key);
 
-            const existingElement = document.querySelector(`[data-header-key="${key}"]`);
+            const existingElement = document.querySelector(`[data-jopi-key="${key}"]`);
             if (existingElement) existingElement.remove();
 
             const root = ReactDOM.createRoot(container);
@@ -101,31 +103,37 @@ export class PageController<T = any> implements UiApplication_Host {
 
             document.head.appendChild(container);
         } else {
-            // Do nothing, since the server already add it.
+            // Do nothing, since the server already adds it.
         }
 
         return this;
     }
 
     public addToBodyBegin(key: string, entry: React.ReactNode) {
-        if (!this.checkKey("bb" + key)) return this;
+        if (this.isServerSide) {
+            if (!this.checkKey("bb" + key)) return this;
 
-        if (!this.state.bodyBegin) this.state.bodyBegin = [entry];
-        else this.state.bodyBegin.push(entry);
+            if (!this.state.bodyBegin) this.state.bodyBegin = [entry];
+            else this.state.bodyBegin.push(entry);
 
-        // Required to trigger a browser-side refresh of the body.
-        this.onStateUpdated(this.state);
+            // Required to trigger a browser-side refresh of the body.
+            this.onStateUpdated(this.state);
+        }
+
         return this;
     }
 
     public addToBodyEnd(key: string, entry: React.ReactNode) {
-        if (!this.checkKey("be" + key)) return this;
+        if (this.isServerSide) {
+            if (!this.checkKey("be" + key)) return this;
 
-        if (!this.state.bodyEnd) this.state.bodyEnd = [entry];
-        else this.state.bodyEnd.push(entry);
+            if (!this.state.bodyEnd) this.state.bodyEnd = [entry];
+            else this.state.bodyEnd.push(entry);
 
-        // Required to trigger a browser-side refresh of the body.
-        this.onStateUpdated(this.state);
+            // Required to trigger a browser-side refresh of the body.
+            this.onStateUpdated(this.state);
+        }
+
         return this;
     }
 

@@ -1116,7 +1116,6 @@ export class JopiRequest {
         this.cookie_deleteResCookie("authorization");
     }
 
-
     /**
      * Allow faking a state where there is no user connected.
      * Is mainly used by the automatic cache to generate
